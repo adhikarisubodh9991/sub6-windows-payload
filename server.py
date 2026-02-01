@@ -2240,11 +2240,7 @@ class WebSocketServer:
         YELLOW = '\033[93m'
         RESET = '\033[0m'
         
-        # Start HTTP file server for client downloads
-        self.start_http_file_server()
-        
         print(f"{GREEN}[*]{RESET} WebSocket server: {CYAN}ws://{self.host}:{self.port}{RESET}")
-        print(f"{GREEN}[*]{RESET} HTTP file server: {CYAN}http://{self.host}:{self.http_port}{RESET} (put files in ./files/)")
         print(f"{GREEN}[*]{RESET} Loot directory: {CYAN}./loot/{RESET}")
         print(f"{YELLOW}[*]{RESET} Waiting for connections...")
         print(f"{YELLOW}[*]{RESET} Type {CYAN}'help'{RESET} for available commands\n")
