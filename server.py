@@ -1918,37 +1918,18 @@ class WebSocketServer:
             
             print(f"[*] Uploading: {filename} ({file_size} bytes)")
             
-            # Send header
-            header = f"<<<UPLOAD_START>>>{filename}<<<NAME_END>>>".encode()
-            await websocket.send(header)
-            await asyncio.sleep(0.05)
-            
-            # Send file in chunks
-            chunk_size = 512  # Small chunks for stability
-            sent = 0
-            chunks = 0
-            
+            # Read entire file and encode as base64 for reliable transfer
             with open(filepath, 'rb') as f:
-                while True:
-                    chunk = f.read(chunk_size)
-                    if not chunk:
-                        break
-                    
-                    await websocket.send(chunk)
-                    sent += len(chunk)
-                    chunks += 1
-                    
-                    # Small delay after each chunk
-                    await asyncio.sleep(0.002)
-                    
-                    # Longer delay every 16 chunks
-                    if chunks % 16 == 0:
-                        await asyncio.sleep(0.03)
+                file_data = f.read()
             
-            await asyncio.sleep(0.05)
-            await websocket.send(b"<<<UPLOAD_END>>>")
+            import base64
+            b64_data = base64.b64encode(file_data).decode('ascii')
             
-            print(f"[+] File uploaded: {filename} ({sent} bytes)")
+            # Send as single message with header containing size
+            upload_msg = f"<<<UPLOAD_START>>>{filename}|{file_size}<<<NAME_END>>>{b64_data}<<<UPLOAD_END>>>"
+            await websocket.send(upload_msg.encode('utf-8'))
+            
+            print(f"[+] File uploaded: {filename} ({file_size} bytes)")
             print(self.session_prompt(session_id), end="", flush=True)
             
         except Exception as e:

