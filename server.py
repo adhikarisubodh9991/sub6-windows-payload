@@ -148,6 +148,7 @@ class WebSocketServer:
         self.prompt_session = PromptSession(
             enable_system_prompt=False,
             enable_suspend=False,
+            enable_open_in_editor=False,
         )
         
         # Live view state
@@ -2054,12 +2055,11 @@ class WebSocketServer:
                         self.in_shell_mode = False
                         self.last_client_prompt = ''
                     elif cmd == 'exit' and not self.in_shell_mode:
-                        # Exit command to client - close session, wait for it to close
+                        # Exit command to client - close session and return to server
+                        self.cprint(f"\n[*] Exiting session {session_id}...")
                         await self.send_command(session_id, cmd)
-                        await asyncio.sleep(0.5)  # Give time for session to close
-                        if session_id not in self.sessions:
-                            break
-                        continue
+                        await asyncio.sleep(0.3)  # Give time for session to close
+                        break
                     
                     # Send command to client
                     if not await self.send_command(session_id, cmd):
