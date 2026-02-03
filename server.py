@@ -674,19 +674,24 @@ class WebSocketServer:
                     try:
                         text = data.decode('utf-8', errors='replace')
                         
-                        # In shell mode, don't print the trailing prompt - we handle it
+                        # Normalize line endings (Windows uses \r\n)
+                        text = text.replace('\r\n', '\n').replace('\r', '\n')
+                        
+                        # In shell mode, handle prompt detection
                         if self.in_shell_mode:
                             lines = text.split('\n')
                             last_line = lines[-1].strip() if lines else ''
+                            
                             # Check if last line looks like a shell prompt
                             if last_line and (last_line.endswith('>') or last_line.endswith('$') or last_line.endswith('#')):
                                 self.last_client_prompt = last_line + ' '
                                 # Print everything except the trailing prompt line
                                 if len(lines) > 1:
                                     output = '\n'.join(lines[:-1])
-                                    if output:
+                                    if output.strip():
                                         print(output, flush=True)
-                                # If only prompt line, still print newline for spacing
+                                # Print newline after output for clean separation
+                                print('', flush=True)
                             else:
                                 # Not a prompt line, print everything
                                 if text.strip():
@@ -2087,9 +2092,18 @@ class WebSocketServer:
                         self.cprint(f"\n[!] Failed to send command")
                         break
                     
-                    # Wait for response - longer for shell commands
+                    # Wait for response with polling
                     if self.in_shell_mode:
-                        await asyncio.sleep(0.1)  # Shorter wait in shell mode
+                        # In shell mode, wait for new prompt with timeout
+                        old_prompt = self.last_client_prompt
+                        self.last_client_prompt = ''  # Clear to detect new prompt
+                        for _ in range(30):  # 3 second max for shell commands
+                            await asyncio.sleep(0.1)
+                            if self.last_client_prompt:
+                                break
+                        # If no new prompt, restore old one
+                        if not self.last_client_prompt:
+                            self.last_client_prompt = old_prompt
                     else:
                         await asyncio.sleep(0.3)
                     
