@@ -18,6 +18,7 @@ from datetime import datetime
 from prompt_toolkit import PromptSession, ANSI
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
+from prompt_toolkit import print_formatted_text
 
 from PIL import Image
 from io import BytesIO
@@ -212,13 +213,10 @@ class WebSocketServer:
     def async_print(self, message, end='\n'):
         """
         Thread-safe notification that doesn't break user input.
-        Uses prompt_toolkit's print_formatted_text which automatically:
-        - Saves the current input buffer
-        - Moves cursor up and prints notification
-        - Restores prompt and input buffer
+        Uses prompt_toolkit's print_formatted_text to properly render ANSI colors.
         """
-        # Simple print - prompt_toolkit's patch_stdout context handles the rest
-        print(message)
+        # Use print_formatted_text with ANSI to properly render colors
+        print_formatted_text(ANSI(message))
     
     def flush_messages(self):
         """Print all queued messages - call this after user submits command"""
