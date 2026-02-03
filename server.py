@@ -247,12 +247,12 @@ class WebSocketServer:
             os.system('clear')
     
     def server_prompt(self):
-        """Colored server prompt"""
-        return f"{Colors.RED}sub6{Colors.RESET} > "
+        """Server prompt"""
+        return "sub6 > "
     
     def session_prompt(self, sid):
-        """Colored session prompt"""
-        return f"{Colors.CYAN}session {sid}{Colors.RESET} > "
+        """Session prompt"""
+        return f"session {sid} > "
     
     def print_session_help(self, session_id):
         """Print OS-specific help menu for session"""
