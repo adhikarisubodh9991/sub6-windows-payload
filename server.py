@@ -14,7 +14,11 @@ import shutil
 import re
 from datetime import datetime
 
-# readline not used on Windows due to compatibility issues
+# prompt_toolkit for proper async notification handling
+from prompt_toolkit import PromptSession
+from prompt_toolkit.patch_stdout import patch_stdout
+from prompt_toolkit.styles import Style
+
 from PIL import Image
 from io import BytesIO
 import webbrowser
@@ -138,6 +142,9 @@ class WebSocketServer:
         self.in_shell_mode = False  # Track if user is in shell mode on client
         self.last_client_prompt = ""  # Store the last prompt received from client
         
+        # prompt_toolkit session for proper input handling
+        self.prompt_session = PromptSession()
+        
         # Live view state
         self.liveview_session = None
         self.liveview_frames = {}  # session_id -> latest frame data
@@ -203,23 +210,15 @@ class WebSocketServer:
         self.http_server_thread.start()
     
     def async_print(self, message, end='\n'):
-        """Thread-safe print that shows notification above current line"""
-        with self.output_lock:
-            # Move to start of line, clear it, print notification
-            sys.stdout.write('\r\033[K')
-            sys.stdout.write(message + end)
-            
-            # Redraw appropriate prompt
-            if self.active_session is not None:
-                if self.in_shell_mode and self.last_client_prompt:
-                    prompt = self.last_client_prompt
-                else:
-                    prompt = self.session_prompt(self.active_session)
-            else:
-                prompt = self.server_prompt()
-            
-            sys.stdout.write(prompt)
-            sys.stdout.flush()
+        """
+        Thread-safe notification that doesn't break user input.
+        Uses prompt_toolkit's print_formatted_text which automatically:
+        - Saves the current input buffer
+        - Moves cursor up and prints notification
+        - Restores prompt and input buffer
+        """
+        # Simple print - prompt_toolkit's patch_stdout context handles the rest
+        print(message)
     
     def flush_messages(self):
         """Print all queued messages - call this after user submits command"""
@@ -1956,7 +1955,7 @@ class WebSocketServer:
             print(self.session_prompt(session_id), end="", flush=True)
     
     async def interact(self, session_id):
-        """Interactive session"""
+        """Interactive session with proper notification handling"""
         if session_id not in self.sessions:
             print(f"[!] Session {session_id} not found")
             return
@@ -1966,35 +1965,25 @@ class WebSocketServer:
         print(f"\n[*] Interacting with session {session_id}")
         print("[*] Type 'background' to return to server prompt")
         print("[*] Type 'help' for commands\n")
-        print(self.session_prompt(session_id), end="", flush=True)
-        
-        # Clear pending input
-        while not self.input_queue.empty():
-            try:
-                self.input_queue.get_nowait()
-            except:
-                break
         
         try:
             while self.running:
-                # Check if session still exists (removed when connection closes)
+                # Check if session still exists
                 if session_id not in self.sessions:
-                    self.flush_messages()
                     print("\n[!] Session closed - returning to server prompt")
                     break
                 
                 try:
-                    # Non-blocking check for input from queue
-                    try:
-                        cmd = self.input_queue.get_nowait()
-                    except queue.Empty:
-                        await asyncio.sleep(0.05)
-                        continue
+                    # Get appropriate prompt
+                    if self.in_shell_mode and self.last_client_prompt:
+                        prompt = self.last_client_prompt
+                    else:
+                        prompt = self.session_prompt(session_id)
                     
-                    # Flush any queued messages before processing command
-                    self.flush_messages()
+                    # Use prompt_toolkit async prompt
+                    cmd = await self.prompt_session.prompt_async(prompt)
                     
-                    # Double-check session still valid before processing command
+                    # Double-check session still valid
                     if session_id not in self.sessions:
                         print("\n[!] Session no longer exists")
                         break
@@ -2008,58 +1997,41 @@ class WebSocketServer:
                         break
                     
                     if cmd == '':
-                        self.flush_messages()
-                        print(self.session_prompt(session_id), end="", flush=True)
                         continue
                     
                     # Handle local commands
                     if cmd.startswith('upload '):
                         filepath = cmd[7:].strip()
                         await self.upload_file(session_id, filepath)
-                        self.flush_messages()
-                        print(self.session_prompt(session_id), end="", flush=True)
                         continue
                     
                     if cmd in ['clear', 'cls']:
                         self.clear_screen()
-                        self.flush_messages()
-                        # Show appropriate prompt based on shell mode
                         if self.in_shell_mode and self.last_client_prompt:
                             print(f"[*] Shell session active")
-                            print(self.last_client_prompt, end="", flush=True)
                         else:
                             print(f"[*] Session {session_id} active")
-                            print(self.session_prompt(session_id), end="", flush=True)
                         continue
                     
                     if cmd == 'help':
                         self.print_session_help(session_id)
-                        self.flush_messages()
-                        print(self.session_prompt(session_id), end="", flush=True)
                         continue
                     
-                    # Send command to client
                     # Track shell mode
                     if cmd == 'shell':
                         self.in_shell_mode = True
                         self.last_client_prompt = ''
                     elif cmd == 'exit' and self.in_shell_mode:
-                        # Could be exiting shell on client side
                         self.in_shell_mode = False
                         self.last_client_prompt = ''
                     
+                    # Send command to client
                     if not await self.send_command(session_id, cmd):
                         print(f"\n[!] Failed to send command")
                         break
                     
-                    # Wait briefly for command response then show prompt
+                    # Wait for response
                     await asyncio.sleep(0.3)
-                    self.flush_messages()
-                    # Show client prompt if in shell mode, otherwise session prompt
-                    if self.in_shell_mode and self.last_client_prompt:
-                        print(self.last_client_prompt, end="", flush=True)
-                    else:
-                        print(self.session_prompt(session_id), end="", flush=True)
                     
                 except KeyboardInterrupt:
                     print(f"\n\n[*] Backgrounding session {session_id}\n")
@@ -2068,7 +2040,6 @@ class WebSocketServer:
             self.active_session = None
             self.in_shell_mode = False
             self.last_client_prompt = ''
-            print(self.server_prompt(), end="", flush=True)
     
     def list_sessions(self):
         """List active sessions"""
@@ -2146,91 +2117,78 @@ class WebSocketServer:
             print(f"{RED}[!]{RESET} Session {CYAN}{session_id}{RESET} not found")
     
     async def command_loop(self):
-        """Handle server commands"""
-        self.start_input_thread()
-        self.flush_messages()
-        print(self.server_prompt(), end="", flush=True)
-        
-        while self.running:
-            try:
-                # Non-blocking check for input from queue
+        """Handle server commands with proper async notification support"""
+        # Use patch_stdout to safely print notifications while user is typing
+        # This saves input buffer, prints notification, then restores prompt + buffer
+        with patch_stdout():
+            while self.running:
                 try:
-                    cmd = self.input_queue.get_nowait()
-                except queue.Empty:
-                    await asyncio.sleep(0.05)
-                    continue
-                
-                # Flush any queued messages before processing command
-                self.flush_messages()
-                
-                cmd = cmd.strip()
-                
-                if not cmd:
-                    self.flush_messages()
-                    print(self.server_prompt(), end="", flush=True)
-                    continue
-                
-                parts = cmd.split()
-                
-                if parts[0] == 'sessions':
-                    if len(parts) == 1 or (len(parts) == 2 and parts[1] == '-l'):
-                        self.list_sessions()
-                    elif len(parts) == 3 and parts[1] == '-i':
-                        try:
-                            sid = int(parts[2])
-                            await self.interact(sid)
-                        except ValueError:
-                            print("[!] Invalid session ID")
-                    elif len(parts) == 3 and parts[1] == '-k':
-                        try:
-                            sid = int(parts[2])
-                            self.kill_session(sid)
-                        except ValueError:
-                            print("[!] Invalid session ID")
+                    # Get current prompt
+                    prompt = self.server_prompt()
+                    
+                    # Use prompt_toolkit's async prompt - handles notifications cleanly
+                    cmd = await self.prompt_session.prompt_async(prompt)
+                    cmd = cmd.strip()
+                    
+                    if not cmd:
+                        continue
+                    
+                    parts = cmd.split()
+                    
+                    if parts[0] == 'sessions':
+                        if len(parts) == 1 or (len(parts) == 2 and parts[1] == '-l'):
+                            self.list_sessions()
+                        elif len(parts) == 3 and parts[1] == '-i':
+                            try:
+                                sid = int(parts[2])
+                                await self.interact(sid)
+                            except ValueError:
+                                print("[!] Invalid session ID")
+                        elif len(parts) == 3 and parts[1] == '-k':
+                            try:
+                                sid = int(parts[2])
+                                self.kill_session(sid)
+                            except ValueError:
+                                print("[!] Invalid session ID")
+                        else:
+                            print("Usage: sessions [-l|-i <id>|-k <id>]")
+                    
+                    elif parts[0] in ['exit', 'quit']:
+                        print("\n[*] Shutting down...")
+                        self.running = False
+                        break
+                    
+                    elif parts[0] == 'help':
+                        CYAN = '\033[96m'
+                        GREEN = '\033[92m'
+                        YELLOW = '\033[93m'
+                        WHITE = '\033[97m'
+                        RESET = '\033[0m'
+                        print(f"\n{YELLOW}═══════════════════════════════════════════════════════════{RESET}")
+                        print(f"                    {CYAN}Server Commands{RESET}")
+                        print(f"{YELLOW}═══════════════════════════════════════════════════════════{RESET}")
+                        print(f"  {GREEN}sessions{RESET}             - List all sessions")
+                        print(f"  {GREEN}sessions -i <id>{RESET}     - Interact with session")
+                        print(f"  {GREEN}sessions -k <id>{RESET}     - Kill session")
+                        print(f"  {GREEN}clear{RESET}                - Clear screen")
+                        print(f"  {GREEN}help{RESET}                 - Show this help")
+                        print(f"  {GREEN}exit/quit{RESET}            - Exit server")
+                        print(f"{YELLOW}═══════════════════════════════════════════════════════════{RESET}\n")
+                    
+                    elif parts[0] == 'clear' or parts[0] == 'cls':
+                        self.clear_screen()
+                        self.print_banner()
+                    
                     else:
-                        print("Usage: sessions [-l|-i <id>|-k <id>]")
-                
-                elif parts[0] in ['exit', 'quit']:
-                    print("\n[*] Shutting down...")
-                    self.running = False
+                        print(f"[!] Unknown command: {cmd}")
+                        print("Type 'help' for available commands")
+                    
+                except KeyboardInterrupt:
+                    print("\n\n[*] Use 'exit' to shut down")
+                except EOFError:
                     break
-                
-                elif parts[0] == 'help':
-                    CYAN = '\033[96m'
-                    GREEN = '\033[92m'
-                    YELLOW = '\033[93m'
-                    WHITE = '\033[97m'
-                    RESET = '\033[0m'
-                    print(f"\n{YELLOW}═══════════════════════════════════════════════════════════{RESET}")
-                    print(f"                    {CYAN}Server Commands{RESET}")
-                    print(f"{YELLOW}═══════════════════════════════════════════════════════════{RESET}")
-                    print(f"  {GREEN}sessions{RESET}             - List all sessions")
-                    print(f"  {GREEN}sessions -i <id>{RESET}     - Interact with session")
-                    print(f"  {GREEN}sessions -k <id>{RESET}     - Kill session")
-                    print(f"  {GREEN}clear{RESET}                - Clear screen")
-                    print(f"  {GREEN}help{RESET}                 - Show this help")
-                    print(f"  {GREEN}exit/quit{RESET}            - Exit server")
-                    print(f"{YELLOW}═══════════════════════════════════════════════════════════{RESET}\n")
-                
-                elif parts[0] == 'clear' or parts[0] == 'cls':
-                    self.clear_screen()
-                    self.print_banner()
-                
-                else:
-                    print(f"[!] Unknown command: {cmd}")
-                    print("Type 'help' for available commands")
-                
-                self.flush_messages()
-                print(self.server_prompt(), end="", flush=True)
-                
-            except KeyboardInterrupt:
-                print("\n\n[*] Use 'exit' to shut down")
-                self.flush_messages()
-                print(self.server_prompt(), end="", flush=True)
-            except Exception as e:
-                print(f"[!] Error: {e}")
-                self.flush_messages()
-                print(self.server_prompt(), end="", flush=True)
+                except Exception as e:
+                    print(f"[!] Error: {e}")
     
     def print_banner(self):
         """Print cool ASCII banner"""
