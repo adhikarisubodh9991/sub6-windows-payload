@@ -2211,7 +2211,7 @@ class WebSocketServer:
         print(f"{RED}|{RESET}                   {CYAN}{BOLD}    S  U   U  B   B  6   6{RESET}                         {RED}|{RESET}")
         print(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  UUUUU  BBBB    666 {RESET}                         {RED}|{RESET}")
         print(f"{RED}|                                                                      |{RESET}")
-        print(f"{RED}|{RESET}                  {YELLOW}   [ Remote Access Trojan ]{RESET}                         {RED}|{RESET}")
+        print(f"{RED}|{RESET}                  {YELLOW}  [ Remote Access Trojan ]{RESET}                         {RED}|{RESET}")
         print(f"{RED}|                                                                      |{RESET}")
         print(f"{RED}+----------------------------------------------------------------------+{RESET}")
         print(f"{RED}|{RESET}   {WHITE}Author{RESET}  : {GREEN}Subodh{RESET}                                                   {RED}|{RESET}")

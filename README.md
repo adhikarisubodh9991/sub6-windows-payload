@@ -1,7 +1,7 @@
 # Sub6 - Multi-Platform Remote Access Tool
 
 <p align="center">
-  <img src="logo.png" alt="Sub6 Logo" width="200"/>
+  <img src="logo.jpg" alt="Sub6 Logo" width="200"/>
 </p>
 
 <p align="center">
