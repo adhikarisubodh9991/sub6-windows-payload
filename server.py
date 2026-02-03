@@ -1994,39 +1994,47 @@ class WebSocketServer:
                     break
                 
                 try:
-                    # Get appropriate prompt - use plain string for shell mode
+                    # Get appropriate prompt
                     if self.in_shell_mode and self.last_client_prompt:
-                        # Shell prompt from client - just use as plain string
                         prompt = self.last_client_prompt
                     else:
                         prompt = self.session_prompt(session_id)
                     
-                    # Create a task for prompt that we can cancel if session closes
-                    prompt_task = asyncio.create_task(self.prompt_session.prompt_async(prompt))
-                    
-                    # Monitor session while waiting for input
-                    try:
-                        while not prompt_task.done():
-                            if session_id not in self.sessions:
-                                # Session closed - cancel prompt and exit cleanly
-                                prompt_task.cancel()
-                                try:
-                                    await prompt_task
-                                except asyncio.CancelledError:
-                                    pass
-                                # Force return to command loop
-                                return
-                            await asyncio.sleep(0.1)
+                    # For shell mode, use simple blocking input to avoid prompt issues
+                    if self.in_shell_mode:
+                        # Print prompt and get input synchronously
+                        import sys
+                        print(prompt, end='', flush=True)
                         
-                        cmd = await prompt_task
-                    except asyncio.CancelledError:
-                        return
+                        # Use asyncio to read input while still monitoring session
+                        loop = asyncio.get_event_loop()
+                        cmd = await loop.run_in_executor(None, sys.stdin.readline)
+                        cmd = cmd.strip()
+                    else:
+                        # Use prompt_toolkit for non-shell mode (fancy features)
+                        prompt_task = asyncio.create_task(self.prompt_session.prompt_async(prompt))
+                        
+                        # Monitor session while waiting for input
+                        try:
+                            while not prompt_task.done():
+                                if session_id not in self.sessions:
+                                    prompt_task.cancel()
+                                    try:
+                                        await prompt_task
+                                    except asyncio.CancelledError:
+                                        pass
+                                    return
+                                await asyncio.sleep(0.1)
+                            
+                            cmd = await prompt_task
+                        except asyncio.CancelledError:
+                            return
+                        
+                        cmd = cmd.strip()
                     
                     # Double-check session still valid
                     if session_id not in self.sessions:
                         break
-                    
-                    cmd = cmd.strip()
                     
                     if cmd.lower() in ['background', 'back', 'bg']:
                         self.cprint(f"\n[*] Backgrounding session {session_id}\n")
@@ -2064,14 +2072,11 @@ class WebSocketServer:
                             self.cprint(f"\n[!] Failed to send command")
                             self.in_shell_mode = False
                             break
-                        # Poll for shell prompt with timeout (max 5 seconds)
-                        # Fast connections return quickly, slow ones still work
-                        for _ in range(50):  # 50 * 0.1s = 5 second max
+                        # Wait for shell prompt with timeout (max 5 seconds)
+                        for _ in range(50):
                             await asyncio.sleep(0.1)
                             if self.last_client_prompt:
                                 break
-                        # Print newline to ensure prompt appears on fresh line
-                        print('', flush=True)
                         continue
                     elif cmd == 'exit' and self.in_shell_mode:
                         self.in_shell_mode = False
@@ -2080,7 +2085,7 @@ class WebSocketServer:
                         # Exit command to client - close session and return to server
                         self.cprint(f"\n[*] Exiting session {session_id}...")
                         await self.send_command(session_id, cmd)
-                        await asyncio.sleep(0.3)  # Give time for session to close
+                        await asyncio.sleep(0.3)
                         break
                     
                     # Send command to client
@@ -2088,20 +2093,17 @@ class WebSocketServer:
                         self.cprint(f"\n[!] Failed to send command")
                         break
                     
-                    # Wait for response with polling
+                    # Wait for response
                     if self.in_shell_mode:
-                        # In shell mode, wait for new prompt with timeout
+                        # Wait for new prompt to arrive
                         old_prompt = self.last_client_prompt
-                        self.last_client_prompt = ''  # Clear to detect new prompt
-                        for _ in range(30):  # 3 second max for shell commands
+                        self.last_client_prompt = ''
+                        for _ in range(50):  # 5 second max
                             await asyncio.sleep(0.1)
                             if self.last_client_prompt:
                                 break
-                        # If no new prompt, restore old one
                         if not self.last_client_prompt:
                             self.last_client_prompt = old_prompt
-                        # Print newline to ensure prompt appears on fresh line
-                        print('', flush=True)
                     else:
                         await asyncio.sleep(0.3)
                     
