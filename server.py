@@ -15,7 +15,7 @@ import re
 from datetime import datetime
 
 # prompt_toolkit for proper async notification handling
-from prompt_toolkit import PromptSession
+from prompt_toolkit import PromptSession, ANSI
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 
@@ -247,12 +247,12 @@ class WebSocketServer:
             os.system('clear')
     
     def server_prompt(self):
-        """Server prompt"""
-        return "sub6 > "
+        """Server prompt with red sub6"""
+        return ANSI('\033[91msub6\033[0m > ')
     
     def session_prompt(self, sid):
-        """Session prompt"""
-        return f"session {sid} > "
+        """Session prompt with cyan session"""
+        return ANSI(f'\033[96msession {sid}\033[0m > ')
     
     def print_session_help(self, session_id):
         """Print OS-specific help menu for session"""
