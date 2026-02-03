@@ -674,28 +674,22 @@ class WebSocketServer:
                     try:
                         text = data.decode('utf-8', errors='replace')
                         
-                        # Normalize line endings (Windows uses \r\n)
-                        text = text.replace('\r\n', '\n').replace('\r', '\n')
-                        
-                        # In shell mode, handle prompt detection
+                        # In shell mode, detect and save the prompt for next input
                         if self.in_shell_mode:
+                            # Look for shell prompt at the end (shell:path>)
                             lines = text.split('\n')
-                            last_line = lines[-1].strip() if lines else ''
+                            last_line = lines[-1] if lines else ''
                             
-                            # Check if last line looks like a shell prompt
-                            if last_line and (last_line.endswith('>') or last_line.endswith('$') or last_line.endswith('#')):
-                                self.last_client_prompt = last_line + ' '
-                                # Print everything except the trailing prompt line
+                            # Check if last line is a shell prompt
+                            if last_line.strip().startswith('shell:') and last_line.strip().endswith('>'):
+                                self.last_client_prompt = last_line.strip() + ' '
+                                # Print everything except the prompt
                                 if len(lines) > 1:
                                     output = '\n'.join(lines[:-1])
-                                    if output.strip():
-                                        print(output, flush=True)
-                                # Print newline after output for clean separation
-                                print('', flush=True)
+                                    print(output, flush=True)
                             else:
-                                # Not a prompt line, print everything
-                                if text.strip():
-                                    print(text, end='', flush=True)
+                                # Just print everything as-is
+                                print(text, end='', flush=True)
                         else:
                             print(text, end='', flush=True)
                     except:

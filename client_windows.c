@@ -1263,11 +1263,10 @@ void shell_session() {
         
         // Build PowerShell command with proper escaping for special chars
         // Quote the current directory to handle spaces and special chars like &
-        // Use Out-String -Width 200 to force proper line breaks in output
         char full_cmd[8192];
         sprintf(full_cmd, 
             "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \""
-            "Set-Location -LiteralPath '%s'; %s | Out-String -Width 200\"",
+            "Set-Location -LiteralPath '%s'; %s\"",
             g_current_dir, cmd);
         
         if (CreateProcessA(NULL, full_cmd, NULL, NULL, TRUE, 
