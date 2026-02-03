@@ -2191,51 +2191,28 @@ class WebSocketServer:
                     print(f"[!] Error: {e}")
     
     def print_banner(self):
-        """Print banner with logo from logo.jpg converted to ASCII art"""
+        """Print ASCII banner with skull"""
         # ANSI color codes
         RED = '\033[91m'
         GREEN = '\033[92m'
         YELLOW = '\033[93m'
-        BLUE = '\033[94m'
         MAGENTA = '\033[95m'
         CYAN = '\033[96m'
         WHITE = '\033[97m'
         BOLD = '\033[1m'
         RESET = '\033[0m'
         
-        # Try to load and display logo.jpg as ASCII art
-        logo_path = os.path.join(os.path.dirname(__file__), 'logo.jpg')
-        if os.path.exists(logo_path):
-            try:
-                img = Image.open(logo_path)
-                # Resize to fit terminal (width ~70 chars, height proportional)
-                width = 70
-                aspect_ratio = img.height / img.width
-                height = int(width * aspect_ratio * 0.45)  # 0.45 because terminal chars are taller than wide
-                img = img.resize((width, height))
-                img = img.convert('L')  # Convert to grayscale
-                
-                # ASCII characters from dark to light
-                ascii_chars = '@%#*+=-:. '
-                
-                print()
-                for y in range(height):
-                    line = ""
-                    for x in range(width):
-                        pixel = img.getpixel((x, y))
-                        char_idx = int(pixel / 256 * len(ascii_chars))
-                        char_idx = min(char_idx, len(ascii_chars) - 1)
-                        line += ascii_chars[char_idx]
-                    # Color the line cyan for cool effect
-                    print(f"{CYAN}{line}{RESET}")
-                print()
-            except Exception as e:
-                # Fallback to text banner if image fails
-                self._print_text_banner()
-        else:
-            self._print_text_banner()
-        
-        # Print info section
+        print()
+        print(f"{RED}      ____{RESET}")
+        print(f"{RED}     /    \\{RESET}")
+        print(f"{RED}    | {WHITE}o  o{RESET}{RED} |{RESET}   {CYAN}{BOLD}U   U  BBBB    6666{RESET}")
+        print(f"{RED}    |  ^^  |{RESET}   {CYAN}{BOLD}U   U  B   B  6    {RESET}")
+        print(f"{RED}    | \\__/ |{RESET}   {CYAN}{BOLD}U   U  BBBB   6666 {RESET}")
+        print(f"{RED}     \\____/{RESET}    {CYAN}{BOLD}U   U  B   B  6   6{RESET}")
+        print(f"{RED}      |  |{RESET}     {CYAN}{BOLD}UUUUU  BBBB    666 {RESET}")
+        print()
+        print(f"              {YELLOW}[ Remote Access Trojan ]{RESET}")
+        print()
         print(f"{RED}+----------------------------------------------------------------------+{RESET}")
         print(f"{RED}|{RESET}   {WHITE}Author{RESET}  : {GREEN}Subodh{RESET}                                                   {RED}|{RESET}")
         print(f"{RED}|{RESET}   {WHITE}Version{RESET} : {GREEN}1.0{RESET}                                                      {RED}|{RESET}")
@@ -2244,31 +2221,9 @@ class WebSocketServer:
         print(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Keylogger        {MAGENTA}[+]{RESET} Screenshot        {MAGENTA}[+]{RESET} File Transfer       {RED}|{RESET}")
         print(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Shell Access     {MAGENTA}[+]{RESET} Persistence       {MAGENTA}[+]{RESET} Process List        {RED}|{RESET}")
         print(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Auto Reconnect   {MAGENTA}[+]{RESET} Stealth Mode      {MAGENTA}[+]{RESET} Multi-Session       {RED}|{RESET}")
-        print(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Live View        {MAGENTA}[+]{RESET} Browser Stream    {MAGENTA}[+]{RESET} Real-time FPS       {RED}|{RESET}")
-        print(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Camera View      {MAGENTA}[+]{RESET} Webcam Capture    {MAGENTA}[+]{RESET} Photo Snapshot      {RED}|{RESET}")
+        print(f"{RED}|{RESET}   {MAGENTA}[+]{RESET} Live View        {MAGENTA}[+]{RESET} Camera View       {MAGENTA}[+]{RESET} Audio Recording     {RED}|{RESET}")
         print(f"{RED}+----------------------------------------------------------------------+{RESET}")
         print()
-    
-    def _print_text_banner(self):
-        """Fallback text banner if logo.jpg not available"""
-        RED = '\033[91m'
-        CYAN = '\033[96m'
-        YELLOW = '\033[93m'
-        BOLD = '\033[1m'
-        RESET = '\033[0m'
-        
-        print()
-        print(f"{RED}+----------------------------------------------------------------------+{RESET}")
-        print(f"{RED}|                                                                      |{RESET}")
-        print(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  U   U  BBBB    6666{RESET}                         {RED}|{RESET}")
-        print(f"{RED}|{RESET}                   {CYAN}{BOLD}S      U   U  B   B  6    {RESET}                         {RED}|{RESET}")
-        print(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  U   U  BBBB   6666 {RESET}                         {RED}|{RESET}")
-        print(f"{RED}|{RESET}                   {CYAN}{BOLD}    S  U   U  B   B  6   6{RESET}                         {RED}|{RESET}")
-        print(f"{RED}|{RESET}                   {CYAN}{BOLD}SSSSS  UUUUU  BBBB    666 {RESET}                         {RED}|{RESET}")
-        print(f"{RED}|                                                                      |{RESET}")
-        print(f"{RED}|{RESET}                  {YELLOW}   [ Remote Access Tool ]{RESET}                           {RED}|{RESET}")
-        print(f"{RED}|                                                                      |{RESET}")
-        print(f"{RED}+----------------------------------------------------------------------+{RESET}")
     
     async def start(self):
         """Start the WebSocket server"""
