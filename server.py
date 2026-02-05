@@ -2244,11 +2244,9 @@ class WebSocketServer:
                     elif parts[0] in ['exit', 'quit']:
                         self.cprint("\n[*] Shutting down...")
                         self.running = False
-                        # Cancel all pending tasks
-                        for task in asyncio.all_tasks():
-                            if task is not asyncio.current_task():
-                                task.cancel()
-                        raise SystemExit(0)
+                        # Use os._exit for immediate clean exit without async cleanup noise
+                        import os
+                        os._exit(0)
                     
                     elif parts[0] == 'help':
                         CYAN = '\033[96m'
