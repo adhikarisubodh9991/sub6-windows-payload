@@ -1453,8 +1453,20 @@ int download_file(const char* filename) {
     char clean_name[MAX_PATH];
     const char* start = filename;
     while (*start == ' ' || *start == '\t') start++;
-    strncpy(clean_name, start, sizeof(clean_name) - 1);
-    clean_name[sizeof(clean_name) - 1] = '\0';
+    
+    // Handle quoted filenames (for files with spaces/special chars)
+    if (*start == '"' || *start == '\'') {
+        char quote = *start++;
+        int i = 0;
+        while (*start && *start != quote && i < MAX_PATH - 1) {
+            clean_name[i++] = *start++;
+        }
+        clean_name[i] = '\0';
+    } else {
+        strncpy(clean_name, start, sizeof(clean_name) - 1);
+        clean_name[sizeof(clean_name) - 1] = '\0';
+    }
+    
     int len = strlen(clean_name);
     while (len > 0 && (clean_name[len-1] == ' ' || clean_name[len-1] == '\t' ||
                        clean_name[len-1] == '\r' || clean_name[len-1] == '\n')) {
