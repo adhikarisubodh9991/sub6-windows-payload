@@ -3938,9 +3938,10 @@ void delete_chrome_cookies(const char* filter) {
     fprintf(pf, "        return -1\n");
     fprintf(pf, "\n");
     fprintf(pf, "# Main execution\n");
-    fprintf(pf, "filter_domain = %s\n", filter ? "r'''" : "None");
     if (filter) {
-        fprintf(pf, "%s'''\n", filter);
+        fprintf(pf, "filter_domain = r'%s'\n", filter);
+    } else {
+        fprintf(pf, "filter_domain = None\n");
     }
     fprintf(pf, "\n");
     fprintf(pf, "kill_browser_processes()\n");
